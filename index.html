@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.20.0 Member screen shows sex + age (age derived from birthday); "Registration #" renamed to PSA ID
+          and populated from the PSA export. (Data: Alet Bosman rename, 21 May TC+Pierre vdMerwe, Wayne+Alet short.)
    0.19.0 Updates no longer reload mid-use (only when the app is backgrounded) — fixes the freeze/crash.
           ✎ Edit a finished boat's lap/total times to override a mis-tapped button.
    0.18.0 PIN robustness: a device with a blank PIN can no longer overwrite one already set in the cloud
@@ -402,7 +404,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.19.0";
+const APP_VERSION = "0.20.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -570,6 +572,13 @@ function fmtDate(s){const d=new Date(s+"T12:00:00");return d.toLocaleDateString(
 function memberName(id){const m=S.members.find(x=>x.id===id);return m?((m.first+" "+(m.last||"")).trim()):"—";}
 function memberFull(m){return (m.first+" "+(m.last||"")).trim();}
 function memberLabel(id){const m=S.members.find(x=>x.id===id);if(!m)return"—";return memberFull(m)+(m.alias?` (${m.alias})`:"");}
+function memberAge(m){ // derived from birthday (always current); manual age overrides
+  if(m.age)return m.age;
+  if(!m.birthday||String(m.birthday).length<10)return "";
+  const b=new Date(m.birthday+"T00:00:00");if(isNaN(b))return "";
+  const n=new Date();let a=n.getFullYear()-b.getFullYear();
+  if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate()))a--;
+  return a>=0&&a<120?a:"";}
 /* generic modal: openModal(title, bodyHTML, onOk) -> returns nothing; onOk() runs on confirm */
 function openModal(title,bodyHTML,onOk,okLabel){
   $("#modalTitle").textContent=title;$("#modalBody").innerHTML=bodyHTML;$("#modalOk").textContent=okLabel||"OK";
@@ -1129,7 +1138,7 @@ function renderMembers(){
     .sort((a,b)=>(a.first+a.last).localeCompare(b.first+b.last));
   $("#memList").innerHTML=list.length?list.map(m=>`<div class="duty">
       <span class="grow"><b>${memberFull(m)}</b>${m.alias?` <span class="alias">“${m.alias}”</span>`:""}
-      <span class="small muted">${m.boat||""}${m.reg?" · #"+m.reg:""}${m.phone?" · "+m.phone:""}${m.email?" · ✉":""}</span></span>
+      <span class="small muted">${m.boat||""}${m.sex?" · "+m.sex:""}${memberAge(m)!==""?" · "+memberAge(m)+"y":""}${m.reg?" · PSA "+m.reg:""}${m.phone?" · "+m.phone:""}${m.email?" · ✉":""}</span></span>
       <button class="sm ghost adminonly" data-edit="${m.id}">edit</button>
     </div>`).join(""):'<div class="empty">No members.</div>';
   renderAccess();renderWaGroups();renderDistances();
@@ -1218,10 +1227,10 @@ function editMember(id){
     <div class="row wrap"><div class="grow">${fld("Phone","mPhone",m.phone,"tel","+27 83…")}</div><div class="grow">${fld("Email","mEmail",m.email,"email")}</div></div>
     <div class="row wrap">
       <div style="width:90px"><label>Sex</label><select id="mSex"><option value="">—</option><option ${m.sex==="M"?"selected":""}>M</option><option ${m.sex==="F"?"selected":""}>F</option></select></div>
-      <div style="width:90px">${fld("Age","mAge",m.age,"number")}</div>
+      <div style="width:90px"><label>Age</label><input id="mAge" type="number" value="${m.age||""}" placeholder="${memberAge(m)!==""?memberAge(m):""}"></div>
       <div style="width:100px"><label>Boat</label><select id="mBoat">${BOATS.map(b=>`<option ${m.boat===b?"selected":""}>${b}</option>`).join("")}</select></div>
     </div>
-    <div class="row wrap"><div class="grow">${fld("Birthday","mBday",m.birthday,"date")}</div><div class="grow">${fld("Registration #","mReg",m.reg)}</div></div>
+    <div class="row wrap"><div class="grow">${fld("Birthday","mBday",m.birthday,"date")}</div><div class="grow">${fld("PSA ID","mReg",m.reg)}</div></div>
     <button class="ghost danger" id="mDel" style="margin-top:12px;width:100%">Remove member</button>`;
   openModal("Edit member",body,()=>{
     const first=$("#mFirst").value.trim(), last=$("#mLast").value.trim();
