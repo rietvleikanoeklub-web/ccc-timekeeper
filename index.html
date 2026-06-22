@@ -28,6 +28,12 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.9.0  Member edit is now a full form (First+Surname required; phone/email/sex/age/nickname/boat/reg
+          optional; remove member). WhatsApp: announcements+swaps open the timekeepers group, results
+          open the results group (links editable by admin); individual reminders DM the member's number.
+   0.8.0  Access control: shared club PIN (lock screen) + admin PIN. Admins (Wayne Lötter, Elton)
+          unlock management (roster/members/settings/calendar/import/data); members can capture +
+          view. Setup mode until an admin PIN is set. Access card in Members tab.
    0.7.0  Nicknames/aliases (shown in pickers + member list, searchable); swap-out now picks a member
           from a dropdown (members also keep time); Excel/CSV results export (download + email via
           Apps Script). Backend gains Mon+Thu email reminders, Google Calendar publishing, email-file action.
@@ -129,6 +135,12 @@
   .chip .b{opacity:.7;font-weight:600}
   .raceclock{font-variant-numeric:tabular-nums}
   .race-running{color:var(--danger)!important}
+  body:not(.is-admin) .adminonly{display:none!important}
+  .lockwrap{position:fixed;inset:0;background:var(--green);color:#fff;z-index:60;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
+  .lockwrap h2{color:#fff;margin:0;font-size:24px}
+  .lockwrap input{max-width:220px;text-align:center;font-size:22px;letter-spacing:6px}
+  .lockwrap button{background:#fff;color:var(--green);min-width:160px}
   .modalwrap{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:18px}
   .modal{background:#fff;border-radius:16px;padding:18px;max-width:420px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
   .modal h3{margin:0 0 10px}
@@ -193,7 +205,7 @@
     <h1>Timekeeper roster</h1>
     <p class="muted small">Tap a duty to remind that person, request a swap, or reassign. A timekeeper who paddles makes the trial unofficial — so swaps matter.</p>
     <div class="card" id="rosterList"></div>
-    <div class="card">
+    <div class="card adminonly">
       <h2>Add a duty</h2>
       <div class="row wrap">
         <input type="date" id="rNewDate" class="grow">
@@ -201,7 +213,7 @@
       </div>
       <button class="sm sec" style="margin-top:10px" id="rAdd">Add duty</button>
     </div>
-    <div class="card">
+    <div class="card adminonly">
       <h2>Import season schedule</h2>
       <p class="small muted">Paste Wayne's WhatsApp schedule. Lines like <code>4 June – Alet</code>; a month/year header (e.g. <code>June 2026</code>) sets the year.</p>
       <textarea id="schedText" placeholder="June 2026&#10;4 June – Alet&#10;11 June – Johan&#10;..."></textarea>
@@ -211,7 +223,7 @@
       </div>
       <div class="small muted" id="schedResult" style="margin-top:6px"></div>
     </div>
-    <div class="card">
+    <div class="card adminonly">
       <h2>Google Calendar</h2>
       <p class="small muted">Publish duties to the club Google Calendar, inviting each timekeeper with a Monday + Thursday reminder. Needs the cloud backend connected (Members → Cloud sync).</p>
       <button class="sec" style="width:100%" id="calPublish">📅 Publish schedule to Google Calendar</button>
@@ -297,8 +309,10 @@
   <!-- ===================== MEMBERS ===================== -->
   <section class="view" id="view-members">
     <h1>Members</h1>
+    <div class="card" id="accessCard"></div>
+    <div class="card adminonly" id="waCard"></div>
     <div class="card">
-      <div class="row"><input id="memSearch" placeholder="Search…" class="grow"><button class="sm sec" id="memAdd">+ Add</button></div>
+      <div class="row"><input id="memSearch" placeholder="Search…" class="grow"><button class="sm sec adminonly" id="memAdd">+ Add</button></div>
       <div id="memList" style="margin-top:8px"></div>
     </div>
     <div class="card">
@@ -315,13 +329,13 @@
       <div class="small muted" id="cloudStatus" style="margin-top:8px"></div>
       <div class="hintbox">Same Google account as the Bar Tab → this reads its member list directly. Deploy <code>CCC_TT_AppsScript.gs</code> and paste the /exec URL here.</div>
     </div>
-    <div class="card">
+    <div class="card adminonly">
       <h2>Import members (manual fallback)</h2>
       <p class="small muted">If the cloud isn't set up yet, paste the Bar Tab <code>CCC_BarTab_Data.json</code> (or its <code>members</code> array). Matched by name; no duplicates.</p>
       <textarea id="impText" placeholder='{ "members": [ … ] }  or  [ … ]'></textarea>
       <div class="row" style="margin-top:8px"><button class="sec grow" id="impBtn">Import members</button><button class="ghost" id="seedBtn">Seed roster names</button></div>
     </div>
-    <div class="card">
+    <div class="card adminonly">
       <h2>Data</h2>
       <div class="row wrap">
         <button class="ghost grow" id="expBtn">Export all data</button>
@@ -340,6 +354,15 @@
   <button data-v="members"><span class="ic">👥</span>Members</button>
 </nav>
 
+<div class="lockwrap" id="lock" style="display:none">
+  <div style="font-size:44px">🛶🔒</div>
+  <h2>CCC Timekeeper</h2>
+  <div>Enter the club PIN</div>
+  <input id="lockPin" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+  <button id="lockOk">Enter</button>
+  <div class="small" id="lockMsg" style="opacity:.85"></div>
+</div>
+
 <div class="modalwrap" id="modal" style="display:none"><div class="modal">
   <h3 id="modalTitle"></h3>
   <div id="modalBody"></div>
@@ -350,7 +373,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.9.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -422,10 +445,14 @@ function load(){
   s.members=[...new Set(seedNames)].map((n,i)=>({id:"m"+(i+1),first:n.split(" ")[0],last:n.split(" ").slice(1).join(" "),reg:"",phone:"",email:"",alias:"",gender:"",boat:"K1"}));
   SEED_ALIASES.forEach(([needle,alias])=>{const m=s.members.find(x=>(x.first+" "+(x.last||"")).toLowerCase().includes(needle.toLowerCase()));if(m)m.alias=alias;});
   s.roster=SEED_ROSTER.map(([date,who])=>({date,who}));
-  return s;
+  return normalize(s); // apply settings defaults (admins, PINs, WhatsApp groups)
 }
 function normalize(d){d.members=d.members||[];d.trials=d.trials||[];d.results=d.results||[];d.entries=d.entries||[];d.roster=d.roster||[];
   d.courseChoice=d.courseChoice||{};d.settings=d.settings||{};d.updatedAt=d.updatedAt||0;d.rev=d.rev||0;
+  if(!d.settings.admins)d.settings.admins=["Wayne Lötter","Elton Du Preez"];
+  if(d.settings.appPin==null)d.settings.appPin="";if(d.settings.adminPin==null)d.settings.adminPin="";
+  if(d.settings.waGroupTimekeepers==null)d.settings.waGroupTimekeepers="https://chat.whatsapp.com/JpSx0RiRlpiFk4YaVfIh5D?s=cl&p=i&mlu=4&amv=1";
+  if(d.settings.waGroupResults==null)d.settings.waGroupResults="https://chat.whatsapp.com/FZiTNLhh7RiF4l3Oey5WD4?s=cl&p=i&mlu=4&amv=1";
   // migrate entries to crew model: stable id + memberIds[]
   d.entries.forEach(e=>{if(!e.id)e.id="e"+Math.random().toString(36).slice(2,9);
     if(!e.memberIds)e.memberIds=e.memberId?[e.memberId]:[];if(!e.splits)e.splits=[];});
@@ -450,7 +477,7 @@ async function pushCloud(){if(!CLOUD_URL||_syncing)return;_syncing=true;renderSy
 async function pullCloud(announce){if(!CLOUD_URL)return;_syncing=true;renderSyncInfo();
   try{const cloud=await cloudGet("data");
     if(cloud&&!cloud.error&&(cloud.updatedAt||0)>(S.updatedAt||0)){
-      S=normalize(cloud);persistLocal();renderAll();if(announce)toast("Synced from cloud");}
+      S=normalize(cloud);persistLocal();renderAll();maybeLock();if(announce)toast("Synced from cloud");}
   }catch(e){if(announce)toast("Couldn't reach cloud");}
   finally{_syncing=false;renderSyncInfo();}}
 async function syncNow(){await pullCloud(true);await pushCloud();}
@@ -556,7 +583,7 @@ $("#btnAnnounce").addEventListener("click",()=>{
 🌅 Sunset ~${SUNSET[d.getMonth()]} — life jackets compulsory.${notes?"\n📝 "+notes:""}
 
 See you on the water!`;
-  shareWhatsApp(msg);
+  shareToGroup(msg,"timekeepers");
 });
 $("#btnStartTrial").addEventListener("click",()=>{ensureTrialForTonight();show("capture");});
 
@@ -602,7 +629,7 @@ function requestSwap(date){
     r.who=memberFull(m);r.reminded=false;save();renderRoster();renderTonight();remind(date);toast("Reassigned to "+r.who);
   },"Reassign");
   const ask=$("#swapAsk");if(ask)ask.onclick=()=>{closeModal();
-    shareWhatsApp(`🔁 *Timekeeping swap needed* — ${r.who} can't keep time on *${fmtDate(date)}* (start ${startTimeFor(new Date(date+"T12:00:00"))}). Can anyone take over? Reply here. 🙏`);};
+    shareToGroup(`🔁 *Timekeeping swap needed* — ${r.who} can't keep time on *${fmtDate(date)}* (start ${startTimeFor(new Date(date+"T12:00:00"))}). Can anyone take over? Reply here. 🙏`,"timekeepers");};
 }
 $("#rAdd").addEventListener("click",()=>{
   const date=$("#rNewDate").value, who=$("#rNewWho").value;
@@ -828,7 +855,7 @@ function buildResults(t){
 }
 $("#capShare").addEventListener("click",()=>{const t=currentTrial();if(!t){toast("No race");return;}
   if(!S.entries.some(e=>e.trialId===t.id&&entryDone(e,t))){toast("No finishers yet");return;}
-  shareWhatsApp(buildResults(t));});
+  shareToGroup(buildResults(t),"results");});
 /* race clock ticker */
 function startClock(){stopClock();_clock=setInterval(()=>{const t=currentTrial();const el=$("#raceClock");
   if(t&&t.startedAt&&el)el.textContent=fmtClock(raceElapsed(t));},100);}
@@ -948,22 +975,96 @@ function renderMembers(){
   $("#memList").innerHTML=list.length?list.map(m=>`<div class="duty">
       <span class="grow"><b>${memberFull(m)}</b>${m.alias?` <span class="alias">“${m.alias}”</span>`:""}
       <span class="small muted">${m.boat||""}${m.reg?" · #"+m.reg:""}${m.phone?" · "+m.phone:""}${m.email?" · ✉":""}</span></span>
-      <button class="sm ghost" data-edit="${m.id}">edit</button>
+      <button class="sm ghost adminonly" data-edit="${m.id}">edit</button>
     </div>`).join(""):'<div class="empty">No members.</div>';
+  renderAccess();renderWaGroups();
   $$("#memList [data-edit]").forEach(b=>b.onclick=()=>editMember(b.dataset.edit));
 }
+/* ============================================================= ACCESS (club PIN + admin PIN) */
+let SESSION_ADMIN = sessionStorage.getItem("ccc_admin")==="1";
+function isAdmin(){return SESSION_ADMIN || !(S.settings && S.settings.adminPin);} // no admin PIN set yet = setup mode
+function applyAdminUI(){document.body.classList.toggle("is-admin", isAdmin());}
+function maybeLock(){
+  const pin=S.settings&&S.settings.appPin;
+  $("#lock").style.display=(pin && sessionStorage.getItem("ccc_unlocked")!=="1")?"flex":"none";
+}
+function tryUnlock(v){
+  v=(v||"").trim();
+  if(S.settings.adminPin && v===S.settings.adminPin){SESSION_ADMIN=true;sessionStorage.setItem("ccc_admin","1");sessionStorage.setItem("ccc_unlocked","1");applyAdminUI();maybeLock();renderAll();toast("Welcome, admin");return true;}
+  if(v===S.settings.appPin){sessionStorage.setItem("ccc_unlocked","1");maybeLock();renderAll();toast("Welcome");return true;}
+  return false;
+}
+$("#lockOk").addEventListener("click",()=>{if(!tryUnlock($("#lockPin").value)){$("#lockMsg").textContent="Wrong PIN — try again";$("#lockPin").value="";}});
+$("#lockPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("#lockOk").click();});
+function renderAccess(){
+  const el=$("#accessCard");if(!el)return;
+  const admins=(S.settings.admins||[]).join(", ");
+  if(isAdmin()){
+    const status=SESSION_ADMIN?"Admin unlocked":(!S.settings.adminPin?"Setup mode — set an admin PIN":"Admin");
+    el.innerHTML=`<h2>Access & admins</h2>
+      <div class="small" style="margin-bottom:6px"><span class="pill ${SESSION_ADMIN?'triples':'summer'}">${status}</span></div>
+      <label>Club PIN (opens the app for members)</label><input id="setAppPin" value="${S.settings.appPin||""}" placeholder="blank = no lock">
+      <label>Admin PIN (Wayne + you)</label><input id="setAdminPin" value="${S.settings.adminPin||""}" placeholder="set an admin PIN">
+      <label>Admins (names, comma-separated)</label><input id="setAdmins" value="${admins}">
+      <div class="row wrap" style="margin-top:10px">
+        <button class="grow" id="saveAccess">Save access</button>
+        ${S.settings.appPin?'<button class="ghost grow" id="lockNow">🔒 Lock now</button>':""}
+      </div>`;
+    $("#saveAccess").onclick=()=>{
+      S.settings.appPin=$("#setAppPin").value.trim();S.settings.adminPin=$("#setAdminPin").value.trim();
+      S.settings.admins=$("#setAdmins").value.split(",").map(s=>s.trim()).filter(Boolean);
+      save();applyAdminUI();renderAccess();toast("Access settings saved");
+    };
+    if($("#lockNow"))$("#lockNow").onclick=()=>{sessionStorage.removeItem("ccc_unlocked");sessionStorage.removeItem("ccc_admin");location.reload();};
+  }else{
+    el.innerHTML=`<h2>Admin</h2>
+      <p class="small muted">Admins: ${admins||"—"}. Enter the admin PIN to manage roster, members and settings.</p>
+      <div class="row"><input id="admPin" type="password" inputmode="numeric" placeholder="admin PIN" class="grow"><button id="admUnlock">Unlock</button></div>`;
+    $("#admUnlock").onclick=()=>{const v=$("#admPin").value.trim();
+      if(S.settings.adminPin&&v===S.settings.adminPin){SESSION_ADMIN=true;sessionStorage.setItem("ccc_admin","1");applyAdminUI();renderAll();toast("Admin unlocked");}
+      else toast("Wrong admin PIN");};
+  }
+}
+function renderWaGroups(){
+  const el=$("#waCard");if(!el)return;
+  el.innerHTML=`<h2>WhatsApp groups</h2>
+    <p class="small muted">Announcements &amp; swaps open the timekeepers group; results open the results group.</p>
+    <label>Timekeepers group link</label><input id="waTk" value="${(S.settings.waGroupTimekeepers||"").replace(/"/g,"&quot;")}">
+    <label>Results group link</label><input id="waRes" value="${(S.settings.waGroupResults||"").replace(/"/g,"&quot;")}">
+    <button id="waSave" style="margin-top:10px">Save groups</button>`;
+  $("#waSave").onclick=()=>{S.settings.waGroupTimekeepers=$("#waTk").value.trim();S.settings.waGroupResults=$("#waRes").value.trim();save();toast("Groups saved");};
+}
+
 function editMember(id){
+  if(!isAdmin()){toast("Admin only");return;}
   const m=S.members.find(x=>x.id===id);if(!m)return;
-  const first=prompt("First name:",m.first);if(first===null)return;
-  const last=prompt("Surname:",m.last||"");if(last===null)return;
-  const reg=prompt("Registration number:",m.reg||"");if(reg===null)return;
-  const phone=prompt("Phone (e.g. +2783…):",m.phone||"");if(phone===null)return;
-  const email=prompt("Email (for duty reminders):",m.email||"");if(email===null)return;
-  const alias=prompt("Nickname (optional):",m.alias||"");if(alias===null)return;
-  Object.assign(m,{first:first.trim(),last:last.trim(),reg:reg.trim(),phone:phone.trim(),email:email.trim(),alias:alias.trim()});save();renderMembers();renderRoster();
+  const esc=v=>(v==null?"":String(v)).replace(/"/g,"&quot;");
+  const fld=(lab,fid,val,type,ph)=>`<label>${lab}</label><input id="${fid}" value="${esc(val)}"${type?` type="${type}"`:""}${ph?` placeholder="${ph}"`:""}>`;
+  const body=`
+    <div class="row wrap"><div class="grow">${fld("First name *","mFirst",m.first)}</div><div class="grow">${fld("Surname *","mLast",m.last)}</div></div>
+    ${fld("Nickname","mAlias",m.alias,"","e.g. Goose")}
+    <div class="row wrap"><div class="grow">${fld("Phone","mPhone",m.phone,"tel","+27 83…")}</div><div class="grow">${fld("Email","mEmail",m.email,"email")}</div></div>
+    <div class="row wrap">
+      <div style="width:90px"><label>Sex</label><select id="mSex"><option value="">—</option><option ${m.sex==="M"?"selected":""}>M</option><option ${m.sex==="F"?"selected":""}>F</option></select></div>
+      <div style="width:90px">${fld("Age","mAge",m.age,"number")}</div>
+      <div style="width:100px"><label>Boat</label><select id="mBoat">${BOATS.map(b=>`<option ${m.boat===b?"selected":""}>${b}</option>`).join("")}</select></div>
+    </div>
+    ${fld("Registration #","mReg",m.reg)}
+    <button class="ghost danger" id="mDel" style="margin-top:12px;width:100%">Remove member</button>`;
+  openModal("Edit member",body,()=>{
+    const first=$("#mFirst").value.trim(), last=$("#mLast").value.trim();
+    if(!first||!last){toast("First name and surname are required");return false;}
+    Object.assign(m,{first,last,alias:$("#mAlias").value.trim(),phone:$("#mPhone").value.trim(),
+      email:$("#mEmail").value.trim(),sex:$("#mSex").value,age:$("#mAge").value.trim(),
+      boat:$("#mBoat").value,reg:$("#mReg").value.trim()});
+    save();renderMembers();renderRoster();toast("Saved "+memberFull(m));
+  },"Save");
+  const del=$("#mDel");if(del)del.onclick=()=>{if(confirm("Remove "+memberFull(m)+"?")){S.members=S.members.filter(x=>x.id!==m.id);save();renderMembers();closeModal();toast("Removed");}};
+  return;
 }
 $("#memAdd").addEventListener("click",()=>{
-  const m={id:"m"+Date.now(),first:"New",last:"Member",reg:"",phone:"",gender:"",boat:"K1"};
+  if(!isAdmin()){toast("Admin only");return;}
+  const m={id:"m"+Date.now(),first:"New",last:"Member",reg:"",phone:"",email:"",alias:"",gender:"",boat:"K1"};
   S.members.push(m);save();editMember(m.id);
 });
 $("#memSearch").addEventListener("input",renderMembers);
@@ -1020,6 +1121,13 @@ function shareWhatsApp(text, phone){
   else copy(text);
 }
 function copy(text){navigator.clipboard?.writeText(text).then(()=>toast("Message copied — paste into "+WA_GROUP),()=>prompt("Copy this:",text));}
+function waGroup(which){return (S.settings&&(which==="results"?S.settings.waGroupResults:S.settings.waGroupTimekeepers))||"";}
+function shareToGroup(text,which){ // copies the message + opens the right WhatsApp group to paste
+  const url=waGroup(which);
+  if(navigator.clipboard){navigator.clipboard.writeText(text).catch(()=>{});toast("Message copied — paste it into the group");}
+  else prompt("Copy this message, then paste into the group:",text);
+  if(url)window.open(url,"_blank");
+}
 
 /* ============================================================= NAV */
 function show(v){
@@ -1035,11 +1143,12 @@ function show(v){
 }
 $$("nav button").forEach(b=>b.onclick=()=>show(b.dataset.v));
 
-function renderAll(){renderTonight();renderRoster();renderCapture();renderStandings();renderMembers();renderSyncInfo();}
+function renderAll(){renderTonight();renderRoster();renderCapture();renderStandings();renderMembers();renderSyncInfo();applyAdminUI();}
 $("#verTag").textContent="v"+APP_VERSION;
 // default standings season = current season
 standSeason=seasonFor(new Date());if(standSeason==="Triple S")standSeason="Triple S";
 renderAll();
+applyAdminUI();maybeLock();
 if(CLOUD_URL) pullCloud(false); // sync down on startup
 if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}
 </script>
