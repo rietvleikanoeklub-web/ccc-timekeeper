@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.7.0  Nicknames/aliases (shown in pickers + member list, searchable); swap-out now picks a member
+          from a dropdown (members also keep time); Excel/CSV results export (download + email via
+          Apps Script). Backend gains Mon+Thu email reminders, Google Calendar publishing, email-file action.
    0.6.0  Seeded 115 real members (names) from the Bar Tab; import parser handles {data:{members}} +
           cell/email. "Usual boats" quick-add chips (frequent crew combinations, most-used + recent
           first); paddler dropdowns list regulars first. New combinations are remembered automatically.
@@ -126,6 +129,10 @@
   .chip .b{opacity:.7;font-weight:600}
   .raceclock{font-variant-numeric:tabular-nums}
   .race-running{color:var(--danger)!important}
+  .modalwrap{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:18px}
+  .modal{background:#fff;border-radius:16px;padding:18px;max-width:420px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+  .modal h3{margin:0 0 10px}
+  .alias{color:var(--muted);font-weight:500}
   .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#111827;color:#fff;
     padding:10px 16px;border-radius:10px;font-size:14px;z-index:40;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%}
   .toast.show{opacity:1}
@@ -204,6 +211,12 @@
       </div>
       <div class="small muted" id="schedResult" style="margin-top:6px"></div>
     </div>
+    <div class="card">
+      <h2>Google Calendar</h2>
+      <p class="small muted">Publish duties to the club Google Calendar, inviting each timekeeper with a Monday + Thursday reminder. Needs the cloud backend connected (Members → Cloud sync).</p>
+      <button class="sec" style="width:100%" id="calPublish">📅 Publish schedule to Google Calendar</button>
+      <div class="small muted" id="calResult" style="margin-top:6px"></div>
+    </div>
   </section>
 
   <!-- ===================== CAPTURE ===================== -->
@@ -266,7 +279,12 @@
         <select id="standClass" style="width:auto;padding:6px 8px"></select>
       </div>
       <div id="standTable"></div>
-      <details><summary>How points work</summary>
+      <div class="row wrap" style="margin-top:12px">
+        <button class="sec grow" id="standXlsx">⬇️ Download Excel</button>
+        <button class="grow" id="standEmail">✉️ Email results</button>
+      </div>
+      <div class="small muted" id="standExportInfo" style="margin-top:6px"></div>
+      <details style="margin-top:8px"><summary>How points work</summary>
         <div class="small muted" style="margin-top:6px">
           10 pts for 1st boat, 9 for 2nd … 2 pts for 9th, 1 pt for every other finisher.
           +3 bonus for beating your season-best on the same course (unless a buoy was missing).
@@ -322,11 +340,17 @@
   <button data-v="members"><span class="ic">👥</span>Members</button>
 </nav>
 
+<div class="modalwrap" id="modal" style="display:none"><div class="modal">
+  <h3 id="modalTitle"></h3>
+  <div id="modalBody"></div>
+  <div class="row" style="margin-top:14px"><button class="ghost grow" id="modalCancel">Cancel</button><button class="grow" id="modalOk">OK</button></div>
+</div></div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 "use strict";
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.7.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -369,6 +393,9 @@ const SEED_MEMBERS=[
   "Lizeth Van der Westhuizen","Andra Venter","Adri Visser","Anatha Visser","Marita Welgemoed",
   "Johan Pretorius","Rob Balshaw"
 ];
+/* club nicknames — matched onto seeded members by a name fragment */
+const SEED_ALIASES=[["TC Smit","Radio Rietvlei"],["Radloff","Goose"],["Wally Fisher","Wally"],
+  ["Ronnie Pronk","Pronkie"],["Krzysztof","Kwaai Krzys"],["Johan Strydom","Vat hom soos 'n Vrydag"]];
 const BOATS = ["K1","K2","K3","S1","S2","S3"];
 
 /* ---------------- course definitions ---------------- */
@@ -392,7 +419,8 @@ function load(){
   const s=blank();
   // seed real members (names) from the Bar Tab, plus any roster-only names not already present
   const seedNames=[...SEED_MEMBERS,...SEED_ROSTER.map(r=>r[1]).filter(n=>!SEED_MEMBERS.some(s=>s.toLowerCase().startsWith(n.toLowerCase())))];
-  s.members=[...new Set(seedNames)].map((n,i)=>({id:"m"+(i+1),first:n.split(" ")[0],last:n.split(" ").slice(1).join(" "),reg:"",phone:"",email:"",gender:"",boat:"K1"}));
+  s.members=[...new Set(seedNames)].map((n,i)=>({id:"m"+(i+1),first:n.split(" ")[0],last:n.split(" ").slice(1).join(" "),reg:"",phone:"",email:"",alias:"",gender:"",boat:"K1"}));
+  SEED_ALIASES.forEach(([needle,alias])=>{const m=s.members.find(x=>(x.first+" "+(x.last||"")).toLowerCase().includes(needle.toLowerCase()));if(m)m.alias=alias;});
   s.roster=SEED_ROSTER.map(([date,who])=>({date,who}));
   return s;
 }
@@ -451,6 +479,16 @@ function pad(n){return String(n).padStart(2,"0");}
 function ymd(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
 function fmtDate(s){const d=new Date(s+"T12:00:00");return d.toLocaleDateString("en-ZA",{weekday:"short",day:"numeric",month:"short"});}
 function memberName(id){const m=S.members.find(x=>x.id===id);return m?((m.first+" "+(m.last||"")).trim()):"—";}
+function memberFull(m){return (m.first+" "+(m.last||"")).trim();}
+function memberLabel(id){const m=S.members.find(x=>x.id===id);if(!m)return"—";return memberFull(m)+(m.alias?` (${m.alias})`:"");}
+/* generic modal: openModal(title, bodyHTML, onOk) -> returns nothing; onOk() runs on confirm */
+function openModal(title,bodyHTML,onOk,okLabel){
+  $("#modalTitle").textContent=title;$("#modalBody").innerHTML=bodyHTML;$("#modalOk").textContent=okLabel||"OK";
+  $("#modal").style.display="flex";
+  $("#modalOk").onclick=()=>{const keep=onOk&&onOk();if(keep!==false)closeModal();};
+  $("#modalCancel").onclick=closeModal;
+}
+function closeModal(){$("#modal").style.display="none";$("#modalBody").innerHTML="";}
 function nextThursday(){const d=new Date();const day=d.getDay();let add=(4-day+7)%7; // 4 = Thu
   // if today is Thursday, keep today; else next Thu
   d.setDate(d.getDate()+add);return d;}
@@ -553,11 +591,18 @@ function remind(date){
 }
 function requestSwap(date){
   const r=S.roster.find(x=>x.date===date);if(!r)return;
-  const msg=`🔁 *Timekeeping swap needed* — ${r.who} can't keep time on *${fmtDate(date)}* (start ${startTimeFor(new Date(date+"T12:00:00"))}). Can anyone take over? Please reply here and I'll update the roster. 🙏`;
-  shareWhatsApp(msg);
-  if(confirm("Posted the swap request. Reassign this duty now?")){
-    const who=prompt("New timekeeper name:",""); if(who){r.who=who.trim();save();renderRoster();renderTonight();toast("Duty reassigned to "+who);}
-  }
+  const cur=S.members.find(m=>memberFull(m).toLowerCase()===r.who.toLowerCase()||m.first.toLowerCase()===r.who.toLowerCase());
+  const opts=S.members.slice().sort((a,b)=>memberFull(a).localeCompare(memberFull(b)))
+    .map(m=>`<option value="${m.id}" ${cur&&m.id===cur.id?"selected":""}>${memberLabel(m.id)}</option>`).join("");
+  const body=`<label>Reassign duty to</label><select id="swapWho">${opts}</select>
+    <div class="small muted" style="margin-top:8px">Members paddle <i>and</i> keep time, so pick whoever is taking over — they'll get a WhatsApp reminder. Or ask the whole group.</div>
+    <button class="wa" id="swapAsk" style="width:100%;margin-top:10px">📣 Ask the group instead</button>`;
+  openModal("Swap timekeeper — "+fmtDate(date),body,()=>{
+    const m=S.members.find(x=>x.id===$("#swapWho").value);if(!m)return;
+    r.who=memberFull(m);r.reminded=false;save();renderRoster();renderTonight();remind(date);toast("Reassigned to "+r.who);
+  },"Reassign");
+  const ask=$("#swapAsk");if(ask)ask.onclick=()=>{closeModal();
+    shareWhatsApp(`🔁 *Timekeeping swap needed* — ${r.who} can't keep time on *${fmtDate(date)}* (start ${startTimeFor(new Date(date+"T12:00:00"))}). Can anyone take over? Reply here. 🙏`);};
 }
 $("#rAdd").addEventListener("click",()=>{
   const date=$("#rNewDate").value, who=$("#rNewWho").value;
@@ -589,6 +634,16 @@ $("#schedImport").addEventListener("click",()=>{
   save();renderRoster();renderTonight();
   $("#schedResult").textContent=`Imported ${parsed.length} duties — ${add} new, ${upd} updated.`;
   $("#schedText").value="";toast("Schedule imported");
+});
+$("#calPublish").addEventListener("click",async()=>{
+  if(!CLOUD_URL){toast("Connect the cloud first (Members → Cloud sync)");return;}
+  $("#calResult").textContent="Publishing…";
+  try{
+    await pushCloud(); // make sure the latest roster is on the server
+    const r=await fetch(CLOUD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({token:CLOUD_TOKEN,action:"publish"})});
+    const res=await r.json();
+    $("#calResult").textContent=(res&&res.ok)?("Published "+res.created+" new calendar event(s) ✓"):("Failed: "+((res&&res.error)||"?"));
+  }catch(e){$("#calResult").textContent="Failed (offline?)";}
 });
 
 /* ============================================================= CAPTURE (live lap timer) */
@@ -693,7 +748,7 @@ function rebuildPaddlerSelects(){
   const rank=paddlerRank();
   const opts='<option value="">— paddler —</option>'+S.members.filter(m=>!used.has(m.id))
     .sort((a,b)=>(rank[b.id]||0)-(rank[a.id]||0)||(a.first+a.last).localeCompare(b.first+b.last)) // regulars first
-    .map(m=>`<option value="${m.id}">${(m.first+" "+(m.last||"")).trim()}</option>`).join("");
+    .map(m=>`<option value="${m.id}">${memberLabel(m.id)}</option>`).join("");
   $("#capPaddlers").innerHTML=Array.from({length:n},(_,i)=>
     `<label>${n>1?"Paddler "+(i+1):"Paddler"}</label><select class="capP" data-i="${i}">${opts}</select>`).join("");
 }
@@ -826,14 +881,73 @@ function renderStandings(){
   }</tbody></table>`;
 }
 
+/* ============================================================= EXPORT (Excel / CSV) */
+function buildAOAs(season){
+  const stand=computeStandings(season,standClass);
+  const standAOA=[["Rank","Paddler","Boats",standClass==="ALL"?"":"Filter:"+standClass,"Trials","Best","Points"].filter(Boolean)];
+  // simpler fixed header
+  standAOA.length=0; standAOA.push(["Rank","Paddler","Trials","Best time","Points"]);
+  stand.forEach((r,i)=>standAOA.push([i+1,r.name,r.count,fmtClock(r.best),r.pts]));
+  const resAOA=[["Date","Course","Pos","Crew","Boat","Total","Points"]];
+  S.trials.filter(t=>t.season===season).sort((a,b)=>a.date.localeCompare(b.date)).forEach(t=>{
+    ["long","short"].forEach(course=>{
+      const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
+        .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
+      g.forEach((x,i)=>resAOA.push([t.date,course,i+1,x.e.memberIds.map(memberName).join(" & "),x.e.boat,fmtClock(x.total),pointsForPosition(i+1)]));
+    });
+  });
+  return {standAOA,resAOA};
+}
+function aoaToCSV(rows){return rows.map(r=>r.map(c=>{c=String(c==null?"":c);return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(",")).join("\n");}
+function b64ToBlob(b64,mime){const bin=atob(b64),a=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);return new Blob([a],{type:mime});}
+function ensureXLSX(){return window.XLSX?Promise.resolve():new Promise((res,rej)=>{
+  const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+  s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+async function exportExcel(doEmail){
+  const season=standSeason;const {standAOA,resAOA}=buildAOAs(season);
+  if(standAOA.length<=1){toast("No results for "+season+" yet");return;}
+  let b64,filename,mime,blob;
+  try{
+    await ensureXLSX();
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(standAOA),"Standings");
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(resAOA),"Results");
+    b64=XLSX.write(wb,{type:"base64",bookType:"xlsx"});
+    filename=`CCC_${season.replace(/\s/g,"")}_results.xlsx`;mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    blob=b64ToBlob(b64,mime);
+  }catch(e){ // offline / CDN blocked -> CSV (opens in Excel)
+    const csv="STANDINGS\n"+aoaToCSV(standAOA)+"\n\nRESULTS\n"+aoaToCSV(resAOA);
+    b64=btoa(unescape(encodeURIComponent(csv)));filename=`CCC_${season.replace(/\s/g,"")}_results.csv`;mime="text/csv";
+    blob=new Blob([csv],{type:mime});
+  }
+  if(doEmail){
+    if(!CLOUD_URL){toast("Connect the cloud (Settings) to email");return;}
+    $("#standExportInfo").textContent="Emailing…";
+    try{const res=await cloudEmailFile(filename,b64,mime,`CCC ${season} time-trial results`,
+      `Attached: ${season} standings & results, generated ${new Date().toLocaleString("en-ZA")} from CCC Timekeeper.`);
+      $("#standExportInfo").textContent=(res&&res.ok)?("Emailed ✓ "+(res.to||"")):("Email failed: "+((res&&res.error)||"?"));}
+    catch(e){$("#standExportInfo").textContent="Email failed (offline?)";}
+  }else{
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=filename;a.click();
+    $("#standExportInfo").textContent="Downloaded "+filename;
+  }
+}
+async function cloudEmailFile(filename,b64,mime,subject,bodyText){
+  const r=await fetch(CLOUD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify({token:CLOUD_TOKEN,action:"email",filename,b64,mime,subject,body:bodyText})});
+  return r.json();
+}
+$("#standXlsx").addEventListener("click",()=>exportExcel(false));
+$("#standEmail").addEventListener("click",()=>exportExcel(true));
+
 /* ============================================================= MEMBERS */
 function renderMembers(){
   const q=($("#memSearch").value||"").toLowerCase();
-  const list=S.members.filter(m=>((m.first+" "+(m.last||"")+" "+m.reg)).toLowerCase().includes(q))
+  const list=S.members.filter(m=>((m.first+" "+(m.last||"")+" "+(m.alias||"")+" "+m.reg)).toLowerCase().includes(q))
     .sort((a,b)=>(a.first+a.last).localeCompare(b.first+b.last));
   $("#memList").innerHTML=list.length?list.map(m=>`<div class="duty">
-      <span class="grow"><b>${(m.first+" "+(m.last||"")).trim()}</b>
-      <span class="small muted">${m.boat||""}${m.reg?" · #"+m.reg:""}${m.phone?" · "+m.phone:""}</span></span>
+      <span class="grow"><b>${memberFull(m)}</b>${m.alias?` <span class="alias">“${m.alias}”</span>`:""}
+      <span class="small muted">${m.boat||""}${m.reg?" · #"+m.reg:""}${m.phone?" · "+m.phone:""}${m.email?" · ✉":""}</span></span>
       <button class="sm ghost" data-edit="${m.id}">edit</button>
     </div>`).join(""):'<div class="empty">No members.</div>';
   $$("#memList [data-edit]").forEach(b=>b.onclick=()=>editMember(b.dataset.edit));
@@ -845,7 +959,8 @@ function editMember(id){
   const reg=prompt("Registration number:",m.reg||"");if(reg===null)return;
   const phone=prompt("Phone (e.g. +2783…):",m.phone||"");if(phone===null)return;
   const email=prompt("Email (for duty reminders):",m.email||"");if(email===null)return;
-  Object.assign(m,{first:first.trim(),last:last.trim(),reg:reg.trim(),phone:phone.trim(),email:email.trim()});save();renderMembers();renderRoster();
+  const alias=prompt("Nickname (optional):",m.alias||"");if(alias===null)return;
+  Object.assign(m,{first:first.trim(),last:last.trim(),reg:reg.trim(),phone:phone.trim(),email:email.trim(),alias:alias.trim()});save();renderMembers();renderRoster();
 }
 $("#memAdd").addEventListener("click",()=>{
   const m={id:"m"+Date.now(),first:"New",last:"Member",reg:"",phone:"",gender:"",boat:"K1"};
