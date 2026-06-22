@@ -3,12 +3,21 @@
 Single-file PWA for Centurion Canoe Club Thursday time trials. Mirrors the CCC Bar Tab
 pattern (one `index.html`, deploy to GitHub Pages, cloud sync via Google Apps Script + Drive JSON).
 
-**Status:** v0.2.0. Cloud sync + live Bar Tab member feed implemented. Works offline (localStorage)
-and syncs to Google Drive when connected.
+**Status:** v0.5.0. **LIVE:** https://rietvleikanoeklub-web.github.io/ccc-timekeeper/
+Installable PWA (offline app shell). Works offline (localStorage) and syncs to Google Drive once the
+Apps Script backend below is connected.
+
+**Remaining manual step:** deploy the Apps Script backend (needs the rietvleikanoeklub@gmail.com login)
+and paste its /exec URL into the app's Members → Cloud sync. Until then the app is fully usable but
+single-device (local only).
 
 ## Deploy (mirrors the Bar Tab)
 
-### 1. Backend — Google Apps Script
+### Frontend — DONE
+Repo `rietvleikanoeklub-web/ccc-timekeeper`, GitHub Pages on `main`/root →
+https://rietvleikanoeklub-web.github.io/ccc-timekeeper/ . Redeploy = commit + push `index.html`.
+
+### 1. Backend — Google Apps Script (still to do)
 1. Sign in to script.google.com as **rietvleikanoeklub@gmail.com** (owns the Bar Tab Drive data).
 2. New project → paste `CCC_TT_AppsScript.gs`. (Optional: set `SHARED_TOKEN`.)
 3. Deploy → New deployment → **Web app**, Execute as **Me**, Access **Anyone** → copy the `/exec` URL.
