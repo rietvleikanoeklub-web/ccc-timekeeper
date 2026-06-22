@@ -13,7 +13,8 @@
  *   POST  body = {token, data}            -> saves the timekeeping document, returns {ok,updatedAt}
  *   POST  body = {token, action:'email', filename, b64, mime, subject, body}
  *                                         -> emails a results file (Excel/CSV) to RESULTS_TO
- *   POST  body = {token, action:'publish'} -> publishes duty schedule to Google Calendar
+ *   POST  body = {token, action:'publish'}   -> publishes duty schedule to Google Calendar
+ *   POST  body = {token, action:'birthdays'} -> publishes member birthdays (annual) to Google Calendar
  *
  * SETUP (one-time)
  *   1. script.google.com -> New project -> paste this file. Sign in as
@@ -81,6 +82,11 @@ function doPost(e) {
   // publish the duty schedule to Google Calendar
   if (body.action === 'publish') {
     try { return json({ ok: true, created: publishSchedule() }); }
+    catch (err) { return json({ error: String(err) }); }
+  }
+  // publish member birthdays (annual all-day events) to Google Calendar
+  if (body.action === 'birthdays') {
+    try { return json({ ok: true, created: publishBirthdays() }); }
     catch (err) { return json({ error: String(err) }); }
   }
 
@@ -204,6 +210,35 @@ function publishSchedule() {
   return created;
 }
 function testPublish() { Logger.log('events created: ' + publishSchedule()); }
+
+/* -------------------- publish member birthdays (annual all-day events) -------------------- */
+function publishBirthdays() {
+  var data = readData();
+  var members = data.members || [];
+  var cal = (CAL_ID === 'primary') ? CalendarApp.getDefaultCalendar() : CalendarApp.getCalendarById(CAL_ID);
+  var props = PropertiesService.getScriptProperties();
+  var now = new Date(); var year = now.getFullYear();
+  var created = 0;
+  members.forEach(function (m) {
+    if (!m || !m.birthday) return;
+    var p = String(m.birthday).split('-');           // expect YYYY-MM-DD
+    if (p.length < 3) return;
+    var mo = parseInt(p[1], 10), day = parseInt(p[2], 10);
+    if (!mo || !day) return;
+    var key = 'bday_' + m.id;
+    if (props.getProperty(key)) return;              // already published
+    var start = new Date(year, mo - 1, day);
+    if (start < now) start = new Date(year + 1, mo - 1, day);  // next occurrence
+    var name = ((m.first || '') + ' ' + (m.last || '')).trim();
+    var rec = CalendarApp.newRecurrence().addYearlyRule();      // recur annually
+    var ev = cal.createAllDayEventSeries('🎂 ' + name + "'s birthday", start, rec,
+      { description: 'CCC member birthday.' });
+    props.setProperty(key, ev.getId());
+    created++;
+  });
+  return created;
+}
+function testBirthdays() { Logger.log('birthday events created: ' + publishBirthdays()); }
 function findMember(members, who) {
   who = (who || '').toLowerCase().trim();
   return members.filter(Boolean).find(function (m) {

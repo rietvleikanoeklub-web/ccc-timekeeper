@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.11.0 Fix: one-time member top-up (seedV) so older installs (only 17 roster names) get all 115
+          Bar Tab members. Surf-ski defaults (Anatha/Albert/Hardus=S1, Ferdi/Lionel=S2). Birthday
+          field on member form + "Publish member birthdays" (annual Google Calendar events).
    0.10.0 Course distances (long lap 2.3km / short lap 1.4km, admin-editable) → avg km/h per boat;
           "⬆ PB" flag when a paddler beats their previous best on that course. Share-to-group now
           shows a copyable message box + Open-group. Quick-add chips show last race's boats first.
@@ -231,6 +234,7 @@
       <h2>Google Calendar</h2>
       <p class="small muted">Publish duties to the club Google Calendar, inviting each timekeeper with a Monday + Thursday reminder. Needs the cloud backend connected (Members → Cloud sync).</p>
       <button class="sec" style="width:100%" id="calPublish">📅 Publish schedule to Google Calendar</button>
+      <button class="sec" style="width:100%;margin-top:8px" id="calBirthdays">🎂 Publish member birthdays</button>
       <div class="small muted" id="calResult" style="margin-top:6px"></div>
     </div>
   </section>
@@ -378,7 +382,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.10.0";
+const APP_VERSION = "0.11.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -424,6 +428,8 @@ const SEED_MEMBERS=[
 /* club nicknames — matched onto seeded members by a name fragment */
 const SEED_ALIASES=[["TC Smit","Radio Rietvlei"],["Radloff","Goose"],["Wally Fisher","Wally"],
   ["Ronnie Pronk","Pronkie"],["Krzysztof","Kwaai Krzys"],["Johan Strydom","Vat hom soos 'n Vrydag"]];
+// members who usually paddle a surf-ski (default boat class)
+const SEED_SURFSKI=[["Anatha","S1"],["Albert Mostert","S1"],["Hardus","S1"],["Ferdi","S2"],["Lionel Coetzee","S2"]];
 const BOATS = ["K1","K2","K3","S1","S2","S3"];
 
 /* ---------------- course definitions ---------------- */
@@ -463,6 +469,18 @@ function normalize(d){d.members=d.members||[];d.trials=d.trials||[];d.results=d.
   // migrate entries to crew model: stable id + memberIds[]
   d.entries.forEach(e=>{if(!e.id)e.id="e"+Math.random().toString(36).slice(2,9);
     if(!e.memberIds)e.memberIds=e.memberId?[e.memberId]:[];if(!e.splits)e.splits=[];});
+  // one-time member top-up: pull in the full Bar Tab roster on older installs that only had the 17 names
+  if(d.settings.seedV!==2){
+    const norm=s=>s.trim().toLowerCase();
+    SEED_MEMBERS.forEach(n=>{const p=n.split(" "),first=p[0],last=p.slice(1).join(" ");
+      if(d.members.some(m=>norm(m.first+" "+(m.last||""))===norm(n)))return; // already present by full name
+      const ph=d.members.find(m=>norm(m.first)===norm(first)&&!(m.last||"").trim()); // bare placeholder (no surname)
+      if(ph){ph.last=last;return;} // upgrade "Elton" -> "Elton Du Preez" instead of duplicating
+      d.members.push({id:"m"+Math.random().toString(36).slice(2,9),first:first,last:last,reg:"",phone:"",email:"",alias:"",gender:"",boat:"K1"});});
+    SEED_ALIASES.forEach(([needle,alias])=>{const m=d.members.find(x=>(x.first+" "+(x.last||"")).toLowerCase().includes(needle.toLowerCase()));if(m&&!m.alias)m.alias=alias;});
+    SEED_SURFSKI.forEach(([needle,boat])=>{const m=d.members.find(x=>(x.first+" "+(x.last||"")).toLowerCase().includes(needle.toLowerCase()));if(m)m.boat=boat;});
+    d.settings.seedV=2;
+  }
   return d;}
 function persistLocal(){localStorage.setItem(STORE_KEY,JSON.stringify(S));}
 function save(){S.updatedAt=Date.now();S.rev=(S.rev||0)+1;persistLocal();schedulePush();renderSyncInfo();}
@@ -677,6 +695,17 @@ $("#calPublish").addEventListener("click",async()=>{
     const r=await fetch(CLOUD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({token:CLOUD_TOKEN,action:"publish"})});
     const res=await r.json();
     $("#calResult").textContent=(res&&res.ok)?("Published "+res.created+" new calendar event(s) ✓"):("Failed: "+((res&&res.error)||"?"));
+  }catch(e){$("#calResult").textContent="Failed (offline?)";}
+});
+$("#calBirthdays").addEventListener("click",async()=>{
+  if(!CLOUD_URL){toast("Connect the cloud first (Members → Cloud sync)");return;}
+  const n=S.members.filter(m=>m.birthday).length;
+  if(!n){toast("No member birthdays captured yet — add them in Members → edit");return;}
+  $("#calResult").textContent="Publishing birthdays…";
+  try{await pushCloud();
+    const r=await fetch(CLOUD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({token:CLOUD_TOKEN,action:"birthdays"})});
+    const res=await r.json();
+    $("#calResult").textContent=(res&&res.ok)?("Published "+res.created+" birthday event(s) ✓"):("Failed: "+((res&&res.error)||"?"));
   }catch(e){$("#calResult").textContent="Failed (offline?)";}
 });
 
@@ -1086,14 +1115,14 @@ function editMember(id){
       <div style="width:90px">${fld("Age","mAge",m.age,"number")}</div>
       <div style="width:100px"><label>Boat</label><select id="mBoat">${BOATS.map(b=>`<option ${m.boat===b?"selected":""}>${b}</option>`).join("")}</select></div>
     </div>
-    ${fld("Registration #","mReg",m.reg)}
+    <div class="row wrap"><div class="grow">${fld("Birthday","mBday",m.birthday,"date")}</div><div class="grow">${fld("Registration #","mReg",m.reg)}</div></div>
     <button class="ghost danger" id="mDel" style="margin-top:12px;width:100%">Remove member</button>`;
   openModal("Edit member",body,()=>{
     const first=$("#mFirst").value.trim(), last=$("#mLast").value.trim();
     if(!first||!last){toast("First name and surname are required");return false;}
     Object.assign(m,{first,last,alias:$("#mAlias").value.trim(),phone:$("#mPhone").value.trim(),
       email:$("#mEmail").value.trim(),sex:$("#mSex").value,age:$("#mAge").value.trim(),
-      boat:$("#mBoat").value,reg:$("#mReg").value.trim()});
+      boat:$("#mBoat").value,reg:$("#mReg").value.trim(),birthday:$("#mBday").value});
     save();renderMembers();renderRoster();toast("Saved "+memberFull(m));
   },"Save");
   const del=$("#mDel");if(del)del.onclick=()=>{if(confirm("Remove "+memberFull(m)+"?")){S.members=S.members.filter(x=>x.id!==m.id);save();renderMembers();closeModal();toast("Removed");}};
