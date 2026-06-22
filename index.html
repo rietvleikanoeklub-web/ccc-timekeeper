@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.6.0  Seeded 115 real members (names) from the Bar Tab; import parser handles {data:{members}} +
+          cell/email. "Usual boats" quick-add chips (frequent crew combinations, most-used + recent
+          first); paddler dropdowns list regulars first. New combinations are remembered automatically.
    0.5.0  Finalise: post-race WhatsApp results message; Wayne's season-schedule paste-import;
           email duty reminders (Apps Script daily trigger); PWA (manifest + offline service worker).
    0.4.0  Crew boats: K2/S2 = 2 paddlers, K3/S3 = 3 (entry.memberIds[]). Add-boat shows N paddler
@@ -117,6 +120,10 @@
   .boatrow.done{opacity:.6;background:#f9fafb}
   .lapbtn{background:var(--green);color:#fff;font-weight:800;border-radius:10px;padding:12px 16px;font-size:15px;flex:0 0 auto;pointer-events:none}
   .undo{background:#fff;color:var(--muted);border:1px solid var(--line);padding:8px 10px;flex:0 0 auto}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}
+  .chip{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:9px 13px;font-size:13px;font-weight:700}
+  .chip:active{background:#d1fae5;transform:scale(.98)}
+  .chip .b{opacity:.7;font-weight:600}
   .raceclock{font-variant-numeric:tabular-nums}
   .race-running{color:var(--danger)!important}
   .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#111827;color:#fff;
@@ -236,12 +243,16 @@
 
     <div class="card" id="addCard">
       <h2>Add a boat</h2>
-      <div class="row wrap">
-        <div style="width:120px"><label>Boat</label><select id="capBoat"></select></div>
-        <div class="grow"><label>Course</label><select id="capCourse"><option value="long">Long</option><option value="short">Short</option></select></div>
+      <div id="capQuick"></div>
+      <div id="capNewCombo">
+        <label class="muted">Or build a new combination</label>
+        <div class="row wrap">
+          <div style="width:120px"><label>Boat</label><select id="capBoat"></select></div>
+          <div class="grow"><label>Course</label><select id="capCourse"><option value="long">Long</option><option value="short">Short</option></select></div>
+        </div>
+        <div id="capPaddlers"></div>
+        <button id="capAdd" style="margin-top:12px;width:100%">Add boat to race</button>
       </div>
-      <div id="capPaddlers"></div>
-      <button id="capAdd" style="margin-top:12px;width:100%">Add boat to race</button>
     </div>
   </section>
 
@@ -315,7 +326,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.6.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -334,6 +345,30 @@ const SEED_ROSTER = [
   ["2026-12-03","Caroline"],["2026-12-10","Darrel"],["2026-12-17","Joe"]
 ];
 
+/* member names seeded from the CCC Bar Tab (names only; phone/email sync server-side via Apps Script) */
+const SEED_MEMBERS=[
+  "Gareth Babberton","Chris Basson","Rudolph Bester","Ferdi Bezuidenhoudt","Johan Bezuidenhout",
+  "Christoff Booysen","Alet Jarus Bosman","Melanie Botes","Wandile Boya","Arnoux Bredell","Astrid Bredenkamp",
+  "Louise Breugem","David Brewer","Ilunke Burger","Johnty Carr","John Cato","Henk Cilliers","George Coetzee",
+  "Lionel Coetzee","Bianca Dahl","Chris Davis","Anya De Beer","James De Jager","Christo De Kock",
+  "Flip De Wet","Adele Drake","Elton Du Preez","Hercu Du Preez","Antoinette Durandt","Dan Durham",
+  "Hertz Eiselen","Calvin Fisher","Wally Fisher","Etienne Fourie","Dirk Fuchsloch","Willem Germishuys",
+  "Shane Gouldie","Chris Greeff","Jeannie Greeff","John Greeff","Louis Heyl","Christian Hofmeyer",
+  "Christiaan Hofmeyr","Thea Hofmeyr","Johan Holscher","Daryl Jacobs","Lauren Janse van Rensburg",
+  "Lorette Janse van Rensburg","Rene Jansen van Rensburg","Herman Joubert","Jan-Louis Joubert",
+  "Frans Kerkhof","Rob King","Dirk Labuschagne","Michelle Labuschagne","Willem Landman","Krzysztof Lapacz",
+  "Hannes Le Roux","Nigel Leighton","Brian Lion Cachet","Wayne Lotter","Eduard Loubser","Liam Maeder",
+  "Brink Martin","George Marx","Sam Matt","Clide McCree","Angus McLennan","Philip Meiring","Elmirie Meyer",
+  "Jenny Patrick Mitchell","Albert Mostert","Yolandi Nel","Erwin Niemand","Chris Oosthuizen",
+  "Marius Oosthuizen","Engelbrecht Pieter","Wise Pieter","Danie Potgieter","Joe Pretorius",
+  "Coenraad Prinsloo","Ronnie Pronk","Johan Rabie","Gustav Radloff","Ettian Raubenheimer","Michelle Reitsma",
+  "Bennie Reynders","Shelley Robertson","Gary Rorich","Ray Rorich","Caroline Rule","Guy Schieer",
+  "Phillip Schutte","Jireh Serfontein","TC Smit","Cabous Snyman","Cobous Snyman","Hein Stander",
+  "Johan Strydom","Mark Swart","Hardus Theunissen","Jeremy Unknown","Caroline Uys","Sue Van Eeden",
+  "Pierre Andre Van Leeuwen","Anton Van Staden","Richard Van Zyl","Pierre Van der Merwe",
+  "Lizeth Van der Westhuizen","Andra Venter","Adri Visser","Anatha Visser","Marita Welgemoed",
+  "Johan Pretorius","Rob Balshaw"
+];
 const BOATS = ["K1","K2","K3","S1","S2","S3"];
 
 /* ---------------- course definitions ---------------- */
@@ -355,9 +390,9 @@ function blank(){return {members:[],trials:[],results:[],entries:[],roster:[],co
 function load(){
   try{const j=JSON.parse(localStorage.getItem(STORE_KEY)); if(j&&j.members) return normalize(j);}catch(e){}
   const s=blank();
-  // seed roster names as lightweight members
-  const names=[...new Set(SEED_ROSTER.map(r=>r[1]))];
-  s.members=names.map((n,i)=>({id:"m"+(i+1),first:n.split(" ")[0],last:n.split(" ").slice(1).join(" "),reg:"",phone:"",gender:"",boat:"K1"}));
+  // seed real members (names) from the Bar Tab, plus any roster-only names not already present
+  const seedNames=[...SEED_MEMBERS,...SEED_ROSTER.map(r=>r[1]).filter(n=>!SEED_MEMBERS.some(s=>s.toLowerCase().startsWith(n.toLowerCase())))];
+  s.members=[...new Set(seedNames)].map((n,i)=>({id:"m"+(i+1),first:n.split(" ")[0],last:n.split(" ").slice(1).join(" "),reg:"",phone:"",email:"",gender:"",boat:"K1"}));
   s.roster=SEED_ROSTER.map(([date,who])=>({date,who}));
   return s;
 }
@@ -611,19 +646,53 @@ function renderCapture(){
   $("#capSuggest").innerHTML = (mine.length===0&&prior)
     ? `<div class="card"><div class="row" style="justify-content:space-between"><span class="small">Last race (${fmtDate(prior.date)}) had <b>${S.entries.filter(e=>e.trialId===prior.id).length}</b> boats.</span><button class="sm wa" id="capLoadLast">Use that list</button></div></div>` : "";
   if($("#capLoadLast"))$("#capLoadLast").onclick=()=>{const n=loadLastWeekInto(t);renderCapture();toast(n+" boats loaded from last week");};
-  rebuildPaddlerSelects();
+  rebuildPaddlerSelects();renderQuickAdd();
   // race button
   const btn=$("#btnRace");const clk=$("#raceClock");
   if(t.startedAt){btn.textContent="● Running — reset";btn.classList.add("danger");clk.classList.add("race-running");clk.textContent=fmtClock(raceElapsed(t));startClock();}
   else{btn.textContent="▶ Start race";btn.classList.remove("danger");clk.classList.remove("race-running");clk.textContent="0:00.0";stopClock();}
   renderEntrants();
 }
+/* how often each paddler has raced — used to list regulars first */
+function paddlerRank(){const c={};S.entries.forEach(e=>(e.memberIds||[]).forEach(id=>c[id]=(c[id]||0)+1));return c;}
+/* recurring boat combinations across past races, most-used + most-recent first */
+function frequentCombos(curId){
+  const map={};
+  S.entries.forEach(e=>{
+    if(e.trialId===curId||!e.memberIds||!e.memberIds.length)return;
+    const key=e.boat+"|"+[...e.memberIds].sort().join(",");
+    const tr=S.trials.find(t=>t.id===e.trialId);const date=tr?tr.date:"";
+    if(!map[key])map[key]={memberIds:[...e.memberIds],boat:e.boat,count:0,lastDate:"",courseCount:{}};
+    const m=map[key];m.count++;if(date>m.lastDate)m.lastDate=date;
+    m.courseCount[e.course]=(m.courseCount[e.course]||0)+1;
+  });
+  return Object.values(map).map(m=>{
+    m.course=Object.keys(m.courseCount).sort((a,b)=>m.courseCount[b]-m.courseCount[a])[0]||"long";return m;
+  }).sort((a,b)=>b.count-a.count||b.lastDate.localeCompare(a.lastDate));
+}
+function renderQuickAdd(){
+  const t=currentTrial();if(!t){$("#capQuick").innerHTML="";return;}
+  const inRace=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
+  const combos=frequentCombos(t.id).filter(c=>!c.memberIds.some(id=>inRace.has(id))).slice(0,10);
+  window._combos=combos;
+  $("#capQuick").innerHTML=combos.length
+    ?`<label>Usual boats — tap to add</label><div class="chips">`+combos.map((c,i)=>
+        `<button class="chip" data-i="${i}">${c.memberIds.map(memberName).join(" & ")} <span class="b">${c.boat}</span></button>`).join("")+`</div>`
+    :"";
+  $$("#capQuick .chip").forEach(b=>b.onclick=()=>addCombo(window._combos[+b.dataset.i]));
+}
+function addCombo(c){
+  const t=currentTrial();if(!t||!c)return;
+  S.entries.push({id:"e"+Date.now().toString(36),trialId:t.id,memberIds:[...c.memberIds],boat:c.boat,course:c.course||"long",splits:[],lastTap:0});
+  save();renderCapture();toast("Added "+c.memberIds.map(memberName).join(" & "));
+}
 function rebuildPaddlerSelects(){
   const t=currentTrial();if(!t)return;
   const n=boatSize($("#capBoat").value);
   const used=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
+  const rank=paddlerRank();
   const opts='<option value="">— paddler —</option>'+S.members.filter(m=>!used.has(m.id))
-    .sort((a,b)=>(a.first+a.last).localeCompare(b.first+b.last))
+    .sort((a,b)=>(rank[b.id]||0)-(rank[a.id]||0)||(a.first+a.last).localeCompare(b.first+b.last)) // regulars first
     .map(m=>`<option value="${m.id}">${(m.first+" "+(m.last||"")).trim()}</option>`).join("");
   $("#capPaddlers").innerHTML=Array.from({length:n},(_,i)=>
     `<label>${n>1?"Paddler "+(i+1):"Paddler"}</label><select class="capP" data-i="${i}">${opts}</select>`).join("");
@@ -785,7 +854,7 @@ $("#memAdd").addEventListener("click",()=>{
 $("#memSearch").addEventListener("input",renderMembers);
 $("#impBtn").addEventListener("click",()=>{
   let raw;try{raw=JSON.parse($("#impText").value);}catch(e){toast("Invalid JSON");return;}
-  const arr=Array.isArray(raw)?raw:(raw.members||raw.S&&raw.S.members);
+  const arr=Array.isArray(raw)?raw:(raw.members||(raw.data&&raw.data.members)||(raw.S&&raw.S.members));
   if(!Array.isArray(arr)){toast("Couldn't find a members array");return;}
   let added=0;
   arr.forEach(o=>{
@@ -796,7 +865,7 @@ $("#impBtn").addEventListener("click",()=>{
     const parts=full.split(" ");
     S.members.push({id:"m"+Date.now()+Math.random().toString(36).slice(2,5),
       first:parts[0],last:parts.slice(1).join(" "),
-      reg:o.reg||o.registration||o.regNo||"",phone:o.phone||o.cell||o.mobile||"",gender:o.gender||"",boat:"K1"});
+      reg:o.reg||o.registration||o.regNo||"",phone:o.phone||o.cell||o.mobile||"",email:o.email||o.mail||"",gender:o.gender||"",boat:"K1"});
     added++;
   });
   save();renderMembers();toast("Imported "+added+" members");
