@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.13.0 Service worker now versions its cache + auto-reloads on a new release (no more stuck versions).
+          Tonight's winter note shows both distances (long 4.6 / short 4.2 km) from settings.
    0.12.0 Capture: ✕ remove/withdraw a boat (active or finished); race clock auto-stops when every
           boat is in (frozen "✓ All boats in"); Winter short default 3 laps; hide implausible speeds (>40km/h).
    0.11.0 Fix: one-time member top-up (seedV) so older installs (only 17 roster names) get all 115
@@ -384,7 +386,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.12.0";
+const APP_VERSION = "0.13.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -590,7 +592,7 @@ function renderTonight(){
   $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
 
   let note="";
-  if(season==="Winter") note=`<div class="warnbox">Winter: sunset ~${sunset}. Short course (2 laps) so everyone is off the water in time.</div>`;
+  if(season==="Winter") note=`<div class="warnbox">Winter: sunset ~${sunset}. Long ${(S.settings.longLapKm*2).toFixed(1)} km (2 laps) + short ${(S.settings.shortLapKm*3).toFixed(1)} km (3 laps) — be off the water before dark.</div>`;
   if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
   $("#tnNote").innerHTML=note;
 }
@@ -1246,7 +1248,10 @@ standSeason=seasonFor(new Date());if(standSeason==="Triple S")standSeason="Tripl
 renderAll();
 applyAdminUI();maybeLock();
 if(CLOUD_URL) pullCloud(false); // sync down on startup
-if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}
+if("serviceWorker" in navigator){window.addEventListener("load",()=>{
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+  let reloaded=false;navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!reloaded){reloaded=true;location.reload();}});
+});}
 </script>
 </body>
 </html>
