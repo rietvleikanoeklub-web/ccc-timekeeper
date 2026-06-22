@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.21.0 Age field now shows the actual derived value (e.g. 28) instead of a faint placeholder; stays
+          dynamic (only stored if you override it).
    0.20.0 Member screen shows sex + age (age derived from birthday); "Registration #" renamed to PSA ID
           and populated from the PSA export. (Data: Alet Bosman rename, 21 May TC+Pierre vdMerwe, Wayne+Alet short.)
    0.19.0 Updates no longer reload mid-use (only when the app is backgrounded) — fixes the freeze/crash.
@@ -404,7 +406,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.20.0";
+const APP_VERSION = "0.21.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -572,13 +574,13 @@ function fmtDate(s){const d=new Date(s+"T12:00:00");return d.toLocaleDateString(
 function memberName(id){const m=S.members.find(x=>x.id===id);return m?((m.first+" "+(m.last||"")).trim()):"—";}
 function memberFull(m){return (m.first+" "+(m.last||"")).trim();}
 function memberLabel(id){const m=S.members.find(x=>x.id===id);if(!m)return"—";return memberFull(m)+(m.alias?` (${m.alias})`:"");}
-function memberAge(m){ // derived from birthday (always current); manual age overrides
-  if(m.age)return m.age;
-  if(!m.birthday||String(m.birthday).length<10)return "";
-  const b=new Date(m.birthday+"T00:00:00");if(isNaN(b))return "";
+function ageFromBirthday(bd){ // current age from a YYYY-MM-DD birthday
+  if(!bd||String(bd).length<10)return "";
+  const b=new Date(bd+"T00:00:00");if(isNaN(b))return "";
   const n=new Date();let a=n.getFullYear()-b.getFullYear();
   if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate()))a--;
   return a>=0&&a<120?a:"";}
+function memberAge(m){return (m.age||m.age===0)&&m.age!==""?m.age:ageFromBirthday(m.birthday);} // manual age overrides derived
 /* generic modal: openModal(title, bodyHTML, onOk) -> returns nothing; onOk() runs on confirm */
 function openModal(title,bodyHTML,onOk,okLabel){
   $("#modalTitle").textContent=title;$("#modalBody").innerHTML=bodyHTML;$("#modalOk").textContent=okLabel||"OK";
@@ -1227,7 +1229,7 @@ function editMember(id){
     <div class="row wrap"><div class="grow">${fld("Phone","mPhone",m.phone,"tel","+27 83…")}</div><div class="grow">${fld("Email","mEmail",m.email,"email")}</div></div>
     <div class="row wrap">
       <div style="width:90px"><label>Sex</label><select id="mSex"><option value="">—</option><option ${m.sex==="M"?"selected":""}>M</option><option ${m.sex==="F"?"selected":""}>F</option></select></div>
-      <div style="width:90px"><label>Age</label><input id="mAge" type="number" value="${m.age||""}" placeholder="${memberAge(m)!==""?memberAge(m):""}"></div>
+      <div style="width:90px"><label>Age</label><input id="mAge" type="number" value="${memberAge(m)}"></div>
       <div style="width:100px"><label>Boat</label><select id="mBoat">${BOATS.map(b=>`<option ${m.boat===b?"selected":""}>${b}</option>`).join("")}</select></div>
     </div>
     <div class="row wrap"><div class="grow">${fld("Birthday","mBday",m.birthday,"date")}</div><div class="grow">${fld("PSA ID","mReg",m.reg)}</div></div>
@@ -1235,9 +1237,12 @@ function editMember(id){
   openModal("Edit member",body,()=>{
     const first=$("#mFirst").value.trim(), last=$("#mLast").value.trim();
     if(!first||!last){toast("First name and surname are required");return false;}
+    const bdayVal=$("#mBday").value, ageVal=$("#mAge").value.trim();
+    // only store age as a manual override if it differs from the birthday-derived age (keeps it dynamic)
+    const ageStore=(ageVal&&ageVal!==String(ageFromBirthday(bdayVal)))?ageVal:"";
     Object.assign(m,{first,last,alias:$("#mAlias").value.trim(),phone:$("#mPhone").value.trim(),
-      email:$("#mEmail").value.trim(),sex:$("#mSex").value,age:$("#mAge").value.trim(),
-      boat:$("#mBoat").value,reg:$("#mReg").value.trim(),birthday:$("#mBday").value});
+      email:$("#mEmail").value.trim(),sex:$("#mSex").value,age:ageStore,
+      boat:$("#mBoat").value,reg:$("#mReg").value.trim(),birthday:bdayVal});
     save();renderMembers();renderRoster();toast("Saved "+memberFull(m));
   },"Save");
   const del=$("#mDel");if(del)del.onclick=()=>{if(confirm("Remove "+memberFull(m)+"?")){S.members=S.members.filter(x=>x.id!==m.id);save();renderMembers();closeModal();toast("Removed");}};
