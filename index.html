@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.18.0 PIN robustness: a device with a blank PIN can no longer overwrite one already set in the cloud
+          (sticky on pull + guard on push); setting a Club PIN now locks the app immediately.
    0.17.0 Hardcoded the cloud URL as the default → every device auto-connects to the shared data on
           first open (no manual Settings step). Still overridable in Settings.
    0.16.0 Sunset planner extended to the full progression up to 4 long + 1 short (~10.5 km, the summer
@@ -398,7 +400,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.17.0";
+const APP_VERSION = "0.18.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -514,13 +516,28 @@ async function cloudPost(data){ // text/plain avoids a CORS preflight Apps Scrip
     body:JSON.stringify({token:CLOUD_TOKEN,data})});return r.json();}
 function schedulePush(){if(!CLOUD_URL)return;clearTimeout(_pushTimer);_pushTimer=setTimeout(pushCloud,1400);}
 async function pushCloud(){if(!CLOUD_URL||_syncing)return;_syncing=true;renderSyncInfo();
-  try{const res=await cloudPost(S);if(res&&res.ok){S.settings.lastSync=Date.now();persistLocal();}}
-  catch(e){/* offline — will retry on next save */}
+  try{
+    // don't let a device with a blank PIN overwrite one already set in the cloud
+    if(!(S.settings.appPin&&S.settings.adminPin)){
+      try{const c=await cloudGet("data");if(c&&!c.error&&c.settings){
+        if(!S.settings.appPin&&c.settings.appPin)S.settings.appPin=c.settings.appPin;
+        if(!S.settings.adminPin&&c.settings.adminPin)S.settings.adminPin=c.settings.adminPin;
+        if((!S.settings.admins||!S.settings.admins.length)&&c.settings.admins)S.settings.admins=c.settings.admins;
+      }}catch(e){}
+    }
+    const res=await cloudPost(S);if(res&&res.ok){S.settings.lastSync=Date.now();persistLocal();}
+  }catch(e){/* offline — will retry on next save */}
   finally{_syncing=false;renderSyncInfo();}}
 async function pullCloud(announce){if(!CLOUD_URL)return;_syncing=true;renderSyncInfo();
   try{const cloud=await cloudGet("data");
     if(cloud&&!cloud.error&&(cloud.updatedAt||0)>(S.updatedAt||0)){
-      S=normalize(cloud);persistLocal();renderAll();maybeLock();if(announce)toast("Synced from cloud");}
+      const kPin=S.settings&&S.settings.appPin,kAdm=S.settings&&S.settings.adminPin,kAdmins=S.settings&&S.settings.admins;
+      S=normalize(cloud);
+      // sticky access settings: a blank cloud value must not wipe a locally-set PIN
+      if(!S.settings.appPin&&kPin)S.settings.appPin=kPin;
+      if(!S.settings.adminPin&&kAdm)S.settings.adminPin=kAdm;
+      if((!S.settings.admins||!S.settings.admins.length)&&kAdmins)S.settings.admins=kAdmins;
+      persistLocal();renderAll();maybeLock();if(announce)toast("Synced from cloud");}
   }catch(e){if(announce)toast("Couldn't reach cloud");}
   finally{_syncing=false;renderSyncInfo();}}
 async function syncNow(){await pullCloud(true);await pushCloud();}
@@ -1134,6 +1151,10 @@ function renderAccess(){
       S.settings.appPin=$("#setAppPin").value.trim();S.settings.adminPin=$("#setAdminPin").value.trim();
       S.settings.admins=$("#setAdmins").value.split(",").map(s=>s.trim()).filter(Boolean);
       save();applyAdminUI();renderAccess();toast("Access settings saved");
+      if(S.settings.appPin){ // lock right away so it's clearly in effect
+        sessionStorage.removeItem("ccc_unlocked");maybeLock();
+        $("#lockMsg").textContent="PIN is now active on every device. Enter it to continue.";
+      }
     };
     if($("#lockNow"))$("#lockNow").onclick=()=>{sessionStorage.removeItem("ccc_unlocked");sessionStorage.removeItem("ccc_admin");location.reload();};
   }else{
