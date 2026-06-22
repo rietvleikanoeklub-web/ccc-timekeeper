@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.12.0 Capture: ✕ remove/withdraw a boat (active or finished); race clock auto-stops when every
+          boat is in (frozen "✓ All boats in"); Winter short default 3 laps; hide implausible speeds (>40km/h).
    0.11.0 Fix: one-time member top-up (seedV) so older installs (only 17 roster names) get all 115
           Bar Tab members. Surf-ski defaults (Anatha/Albert/Hardus=S1, Ferdi/Lionel=S2). Birthday
           field on member form + "Publish member birthdays" (annual Google Calendar events).
@@ -382,7 +384,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.11.0";
+const APP_VERSION = "0.12.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -712,7 +714,7 @@ $("#calBirthdays").addEventListener("click",async()=>{
 /* ============================================================= CAPTURE (live lap timer) */
 let capFilter="ALL", _clock=null;
 function defaultLaps(season){
-  if(season==="Winter")   return {long:2, short:2};
+  if(season==="Winter")   return {long:2, short:3};
   if(season==="Triple S") return {long:3, short:3};
   return {long:5, short:3}; // Summer
 }
@@ -780,8 +782,16 @@ function renderCapture(){
   rebuildPaddlerSelects();renderQuickAdd();
   // race button
   const btn=$("#btnRace");const clk=$("#raceClock");
-  if(t.startedAt){btn.textContent="● Running — reset";btn.classList.add("danger");clk.classList.add("race-running");clk.textContent=fmtClock(raceElapsed(t));startClock();}
-  else{btn.textContent="▶ Start race";btn.classList.remove("danger");clk.classList.remove("race-running");clk.textContent="0:00.0";stopClock();}
+  const ents=S.entries.filter(e=>e.trialId===t.id);
+  const hasActive=ents.some(e=>!entryDone(e,t));
+  if(t.startedAt && (hasActive || !ents.length)){
+    btn.textContent="● Running — reset";btn.classList.add("danger");clk.classList.add("race-running");clk.textContent=fmtClock(raceElapsed(t));startClock();
+  }else if(t.startedAt && !hasActive){ // every boat finished — freeze the clock
+    stopClock();btn.textContent="✓ All boats in";btn.classList.remove("danger");clk.classList.remove("race-running");
+    clk.textContent=fmtClock(Math.max.apply(null,ents.map(e=>entryTotal(e)||0)));
+  }else{
+    btn.textContent="▶ Start race";btn.classList.remove("danger");clk.classList.remove("race-running");clk.textContent="0:00.0";stopClock();
+  }
   renderEntrants();
 }
 /* how often each paddler has raced — used to list regulars first */
@@ -843,31 +853,40 @@ function renderEntrants(){
       <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>
         <div class="small muted">${e.course==="short"?"Short":"Long"} · Lap ${n}/${tgt}${n?` · last ${last} · total ${fmtClock(entryTotal(e))}`:""}</div></div>
       ${n?`<button class="undo" data-undo="${e.id}">↩</button>`:""}
+      <button class="undo rm" data-rm="${e.id}">✕</button>
       <button class="lapbtn">Lap</button></div>`;};
   const rowDone=e=>{const sp=entrySpeed(e),imp=entryImproved(e);
     return `<div class="boatrow done">
       <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>${imp?' <span class="pill triples">⬆ PB</span>':""}
-        <div class="small muted">${e.course==="short"?"Short":"Long"} · ${e.splits.length} laps${sp?" · "+fmtSpeed(sp):""}</div></div>
+        <div class="small muted">${e.course==="short"?"Short":"Long"} · ${e.splits.length} laps${sp&&sp<40?" · "+fmtSpeed(sp):""}</div></div>
       <span class="num">${fmtClock(entryTotal(e))}</span>
-      <button class="undo" data-undo="${e.id}">↩</button></div>`;};
+      <button class="undo" data-undo="${e.id}">↩</button>
+      <button class="undo rm" data-rm="${e.id}">✕</button></div>`;};
   const finishedHdr=done.length?`<div class="small muted" style="margin:6px 0">Finished</div>`:"";
   $("#capList").innerHTML=(active.map(rowActive).join("")||(done.length?"":'<div class="empty">No boats yet — add them below, or load last week’s list.</div>'))+finishedHdr+done.map(rowDone).join("");
   $$('#capList .boatrow.active').forEach(r=>r.onclick=()=>recordLap(r.dataset.lap));
   $$('#capList [data-undo]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();undoLap(b.dataset.undo);});
+  $$('#capList [data-rm]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();removeEntry(b.dataset.rm);});
 }
 function recordLap(eid){
   const t=currentTrial();if(!t)return;
   if(!t.startedAt){toast("Tap ▶ Start race first");return;}
   const e=S.entries.find(x=>x.id===eid);if(!e)return;
   if(entryDone(e,t))return;
-  e.splits.push(+raceElapsed(t).toFixed(1));e.lastTap=Date.now();
-  save();renderEntrants();
-  if(entryDone(e,t))toast(entryName(e)+" finished · "+fmtClock(entryTotal(e)));
+  e.splits.push(+raceElapsed(t).toFixed(1));e.lastTap=Date.now();save();renderEntrants();
+  if(entryDone(e,t)){toast(entryName(e)+" finished · "+fmtClock(entryTotal(e)));
+    const stillOut=S.entries.some(x=>x.trialId===t.id&&!entryDone(x,t));
+    if(!stillOut){stopClock();renderCapture();toast("All boats in — timer stopped ⏹");}}
 }
 function undoLap(eid){
   const t=currentTrial();const e=S.entries.find(x=>x.id===eid);if(!e)return;
-  if(e.splits.length){e.splits.pop();save();renderEntrants();}
-  else if(confirm("Remove "+entryName(e)+" from the race?")){S.entries=S.entries.filter(x=>x.id!==eid);save();rebuildPaddlerSelects();renderEntrants();}
+  if(e.splits.length){e.splits.pop();save();renderCapture();} // re-render in case it re-opens the race
+  else removeEntry(eid);
+}
+function removeEntry(eid){
+  const t=currentTrial();const e=S.entries.find(x=>x.id===eid);if(!e)return;
+  if(!confirm("Remove "+entryName(e)+" from the race?"))return;
+  S.entries=S.entries.filter(x=>x.id!==eid);save();rebuildPaddlerSelects();renderCapture();
 }
 $("#capTrial").addEventListener("change",e=>{S.capSel=e.target.value;save();renderCapture();});
 $("#btnRace").addEventListener("click",()=>{
