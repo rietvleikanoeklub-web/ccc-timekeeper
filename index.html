@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.22.0 "Clear all boats (reset this race)" button on Capture (admin) — wipes a test race's results
+          and resets the clock in one tap.
    0.21.0 Age field now shows the actual derived value (e.g. 28) instead of a faint placeholder; stays
           dynamic (only stored if you override it).
    0.20.0 Member screen shows sex + age (age derived from birthday); "Registration #" renamed to PSA ID
@@ -295,6 +297,7 @@
       <div class="muted small" style="margin-bottom:10px">Tap a boat as it crosses the line to record a lap. Finished boats drop to the bottom.</div>
       <div id="capList"></div>
       <button class="wa" id="capShare" style="width:100%;margin-top:12px">📋 Share results to WhatsApp</button>
+      <button class="ghost danger adminonly" id="capClear" style="width:100%;margin-top:8px">🗑 Clear all boats (reset this race)</button>
     </div>
 
     <div class="card" id="addCard">
@@ -406,7 +409,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.21.0";
+const APP_VERSION = "0.22.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -962,6 +965,15 @@ function removeEntry(eid){
   if(!confirm("Remove "+entryName(e)+" from the race?"))return;
   S.entries=S.entries.filter(x=>x.id!==eid);save();rebuildPaddlerSelects();renderCapture();
 }
+function clearRace(){
+  const t=currentTrial();if(!t)return;
+  const n=S.entries.filter(e=>e.trialId===t.id).length;
+  if(!n){toast("No boats to clear");return;}
+  if(!confirm("Remove all "+n+" boat(s) from "+fmtDate(t.date)+" and reset the clock?\n(use this to clear a test race)"))return;
+  S.entries=S.entries.filter(e=>e.trialId!==t.id);
+  t.startedAt=null;
+  save();rebuildPaddlerSelects();renderCapture();toast("Race cleared");
+}
 /* override a mis-tapped time: edit each lap's cumulative time (and the total) */
 function editEntry(eid){
   const e=S.entries.find(x=>x.id===eid);if(!e)return;
@@ -1017,6 +1029,7 @@ function buildResults(t){
 $("#capShare").addEventListener("click",()=>{const t=currentTrial();if(!t){toast("No race");return;}
   if(!S.entries.some(e=>e.trialId===t.id&&entryDone(e,t))){toast("No finishers yet");return;}
   shareModal("Post results",buildResults(t),"results");});
+$("#capClear").addEventListener("click",clearRace);
 /* race clock ticker */
 function startClock(){stopClock();_clock=setInterval(()=>{const t=currentTrial();const el=$("#raceClock");
   if(t&&t.startedAt&&el)el.textContent=fmtClock(raceElapsed(t));},100);}
