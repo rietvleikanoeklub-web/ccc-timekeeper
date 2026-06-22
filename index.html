@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.19.0 Updates no longer reload mid-use (only when the app is backgrounded) — fixes the freeze/crash.
+          ✎ Edit a finished boat's lap/total times to override a mis-tapped button.
    0.18.0 PIN robustness: a device with a blank PIN can no longer overwrite one already set in the cloud
           (sticky on pull + guard on push); setting a Club PIN now locks the app immediately.
    0.17.0 Hardcoded the cloud URL as the default → every device auto-connects to the shared data on
@@ -400,7 +402,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.18.0";
+const APP_VERSION = "0.19.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -920,13 +922,14 @@ function renderEntrants(){
       <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>${imp?' <span class="pill triples">⬆ PB</span>':""}
         <div class="small muted">${e.course==="short"?"Short":"Long"} · ${e.splits.length} laps${sp&&sp<40?" · "+fmtSpeed(sp):""}</div></div>
       <span class="num">${fmtClock(entryTotal(e))}</span>
-      <button class="undo" data-undo="${e.id}">↩</button>
+      <button class="undo" data-editsp="${e.id}">✎</button>
       <button class="undo rm" data-rm="${e.id}">✕</button></div>`;};
   const finishedHdr=done.length?`<div class="small muted" style="margin:6px 0">Finished</div>`:"";
   $("#capList").innerHTML=(active.map(rowActive).join("")||(done.length?"":'<div class="empty">No boats yet — add them below, or load last week’s list.</div>'))+finishedHdr+done.map(rowDone).join("");
   $$('#capList .boatrow.active').forEach(r=>r.onclick=()=>recordLap(r.dataset.lap));
   $$('#capList [data-undo]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();undoLap(b.dataset.undo);});
   $$('#capList [data-rm]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();removeEntry(b.dataset.rm);});
+  $$('#capList [data-editsp]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();editEntry(b.dataset.editsp);});
 }
 function recordLap(eid){
   const t=currentTrial();if(!t)return;
@@ -947,6 +950,21 @@ function removeEntry(eid){
   const t=currentTrial();const e=S.entries.find(x=>x.id===eid);if(!e)return;
   if(!confirm("Remove "+entryName(e)+" from the race?"))return;
   S.entries=S.entries.filter(x=>x.id!==eid);save();rebuildPaddlerSelects();renderCapture();
+}
+/* override a mis-tapped time: edit each lap's cumulative time (and the total) */
+function editEntry(eid){
+  const e=S.entries.find(x=>x.id===eid);if(!e)return;
+  const splits=e.splits&&e.splits.length?e.splits:(e.total!=null?[e.total]:[]);
+  const body=`<p class="small muted">Correct any lap's running time (mm:ss.t). The last one is the total.</p>`
+    +splits.map((s,i)=>`<label>Lap ${i+1}${i===splits.length-1?" (total)":""}</label><input class="capEd" data-i="${i}" value="${fmtClock(s)}" inputmode="decimal">`).join("")
+    +(splits.length?"":"<p class='small muted'>No lap times recorded.</p>");
+  openModal("Edit "+entryName(e),body,()=>{
+    const vals=$$(".capEd").map(inp=>parseTime(inp.value));
+    if(vals.some(v=>v==null)){toast("Bad time — use mm:ss or mm:ss.t");return false;}
+    for(let i=1;i<vals.length;i++){if(vals[i]<vals[i-1]){toast("Each lap time must be later than the previous");return false;}}
+    e.splits=vals; if(e.total!=null)e.total=vals[vals.length-1]; e.lastTap=Date.now();
+    save();renderCapture();toast("Time updated");
+  },"Save");
 }
 $("#capTrial").addEventListener("change",e=>{S.capSel=e.target.value;save();renderCapture();});
 $("#btnRace").addEventListener("click",()=>{
@@ -1317,7 +1335,14 @@ applyAdminUI();maybeLock();
 if(CLOUD_URL) pullCloud(false); // sync down on startup
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   navigator.serviceWorker.register("sw.js").catch(()=>{});
-  let reloaded=false;navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!reloaded){reloaded=true;location.reload();}});
+  let pending=false;
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{
+    if(pending)return;pending=true;
+    // never reload mid-use — only when the app is backgrounded, so capture is never interrupted
+    if(document.hidden){location.reload();}
+    else{toast("Update ready — will apply when you next open the app");
+      document.addEventListener("visibilitychange",function h(){if(document.hidden){location.reload();}},{once:true});}
+  });
 });}
 </script>
 </body>
