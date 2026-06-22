@@ -1,0 +1,14 @@
+{
+  "name": "CCC Timekeeper",
+  "short_name": "Timekeeper",
+  "description": "Centurion Canoe Club time-trial timekeeping & duty roster",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e7c5a",
+  "theme_color": "#0e7c5a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

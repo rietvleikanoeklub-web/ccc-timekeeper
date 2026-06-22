@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e7c5a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Timekeeper">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>CCC Timekeeper</title>
+<!--
+  CCC Timekeeper — Centurion Canoe Club time-trial timekeeping + duty roster
+  ============================================================================
+  APP_VERSION 0.1.0  (2026-06-22)  — working prototype
+  Single-file PWA, mirrors the CCC Bar Tab pattern (GitHub Pages + Apps Script/Drive later).
+  Persists to localStorage now; cloud sync (Google Apps Script + Drive JSON) is stubbed (syncNow).
+
+  WHAT WORKS in this prototype:
+   - Tonight: auto-computes the next Thursday's season, start time (17:00/17:15) and
+     distance/laps, lets you confirm/override, and builds a WhatsApp announcement.
+   - Roster: 2026 schedule preloaded; per-person reminder + "request swap" via WhatsApp;
+     reassign a duty.
+   - Capture: record finishers in crossing order, time + boat class; auto position & points.
+   - Standings: combined league (Summer / Winter / Triple S), 10-9-...-1 scoring,
+     +3 season-best bonus, +10 per 10 trials. Boat class recorded for future per-class splits.
+   - Members: editable; import from CCC Bar Tab JSON (paste/upload).
+
+  CHANGELOG
+   0.5.0  Finalise: post-race WhatsApp results message; Wayne's season-schedule paste-import;
+          email duty reminders (Apps Script daily trigger); PWA (manifest + offline service worker).
+   0.4.0  Crew boats: K2/S2 = 2 paddlers, K3/S3 = 3 (entry.memberIds[]). Add-boat shows N paddler
+          pickers by boat type; standings credit every crew member with the boat's position points.
+   0.3.0  Capture rebuilt as a live lap-timer: one screen, Long/Short colour tags, race clock,
+          tap-a-boat-per-lap, finished boats sink to bottom, "use last week's list" suggestion.
+          Scoring now ranks within each course group. New per-entrant model (S.entries with splits).
+   0.2.0  cloud sync (Google Apps Script + Drive, last-write-wins) + live member feed from the Bar Tab
+   0.1.0  initial prototype
+-->
+<style>
+  :root{
+    --green:#0e7c5a; --green-d:#0a5d43; --bg:#f3f4f6; --card:#fff; --ink:#111827;
+    --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --warn:#b45309; --danger:#b91c1c;
+    --gold:#b8860b; --radius:14px; --pad:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-text-size-adjust:100%}
+  body{padding-bottom:84px}
+  header{position:sticky;top:0;z-index:20;background:var(--green);color:#fff;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) var(--pad) 12px;
+    display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  header .logo{font-weight:800;font-size:18px;letter-spacing:.3px}
+  header .ver{margin-left:auto;font-size:11px;opacity:.8}
+  main{padding:var(--pad);max-width:760px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:var(--pad);margin:0 0 14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .card h2{margin:0 0 10px;font-size:15px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  h1{font-size:20px;margin:0 0 4px}
+  .row{display:flex;gap:10px;align-items:center}
+  .row.wrap{flex-wrap:wrap}
+  .grow{flex:1}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--line);
+    border-radius:10px;background:#fff;color:var(--ink)}
+  textarea{min-height:90px;resize:vertical}
+  button{cursor:pointer;border:0;border-radius:10px;padding:11px 14px;font-weight:600;
+    background:var(--green);color:#fff}
+  button.sec{background:#fff;color:var(--green);border:1px solid var(--green)}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  button.danger{background:var(--danger)}
+  button.sm{padding:7px 10px;font-size:13px}
+  button.wa{background:#25d366;color:#073}
+  .pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600}
+  .pill.summer{background:#fde68a;color:#92400e}
+  .pill.winter{background:#bfdbfe;color:#1e40af}
+  .pill.triples{background:#ddd6fe;color:#5b21b6}
+  .big{font-size:30px;font-weight:800;line-height:1.1}
+  .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
+  .kv:last-child{border-bottom:0}
+  .kv .k{color:var(--muted)}
+  .kv .v{font-weight:700;text-align:right}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tabs button{background:#fff;color:var(--muted);border:1px solid var(--line);padding:8px 12px}
+  .tabs button.on{background:var(--green);color:#fff;border-color:var(--green)}
+  nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);
+    display:flex;justify-content:space-around;padding:6px 4px calc(env(safe-area-inset-bottom,0px) + 6px);z-index:20}
+  nav button{background:none;color:var(--muted);font-size:11px;font-weight:600;display:flex;
+    flex-direction:column;align-items:center;gap:3px;padding:6px 8px;flex:1}
+  nav button .ic{font-size:20px;line-height:1}
+  nav button.on{color:var(--green)}
+  .view{display:none}
+  .view.on{display:block}
+  .finisher{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+  .finisher .pos{width:28px;height:28px;border-radius:50%;background:var(--green);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:0 0 auto}
+  .finisher .nm{flex:1;min-width:0}
+  .finisher .nm b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:800;letter-spacing:.3px;vertical-align:middle}
+  .tag.long{background:#bfdbfe;color:#1e3a8a}
+  .tag.short{background:#fed7aa;color:#9a3412}
+  .boatrow{display:flex;align-items:center;gap:10px;padding:12px 10px;border:1px solid var(--line);
+    border-radius:12px;margin-bottom:8px;background:#fff;-webkit-tap-highlight-color:transparent}
+  .boatrow.active{cursor:pointer}
+  .boatrow.active:active{background:#ecfdf5;transform:scale(.99)}
+  .boatrow .bl{flex:1;min-width:0}
+  .boatrow .bl b{font-size:16px}
+  .boatrow.done{opacity:.6;background:#f9fafb}
+  .lapbtn{background:var(--green);color:#fff;font-weight:800;border-radius:10px;padding:12px 16px;font-size:15px;flex:0 0 auto;pointer-events:none}
+  .undo{background:#fff;color:var(--muted);border:1px solid var(--line);padding:8px 10px;flex:0 0 auto}
+  .raceclock{font-variant-numeric:tabular-nums}
+  .race-running{color:var(--danger)!important}
+  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#111827;color:#fff;
+    padding:10px 16px;border-radius:10px;font-size:14px;z-index:40;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%}
+  .toast.show{opacity:1}
+  .empty{color:var(--muted);text-align:center;padding:24px 8px}
+  .hintbox{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:10px 12px;font-size:13px;color:#065f46;margin-top:8px}
+  .warnbox{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:13px;color:#92400e;margin-top:8px}
+  .duty{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .duty .d{font-weight:700;width:74px;flex:0 0 auto}
+  .duty.next{background:#ecfdf5;border-radius:8px;padding-left:8px;padding-right:8px}
+  details summary{cursor:pointer;font-weight:600;color:var(--green);font-size:13px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">🛶 CCC Timekeeper</span>
+  <span class="ver" id="verTag"></span>
+</header>
+
+<main>
+  <!-- ===================== TONIGHT ===================== -->
+  <section class="view on" id="view-tonight">
+    <h1 id="tnTitle">This Thursday</h1>
+    <p class="muted small" id="tnSub"></p>
+
+    <div class="card">
+      <div class="row wrap" style="justify-content:space-between">
+        <div>
+          <div class="muted small">Start time</div>
+          <div class="big" id="tnStart">—</div>
+        </div>
+        <div style="text-align:right">
+          <div class="muted small">Distance / course</div>
+          <div class="big" id="tnDist">—</div>
+        </div>
+      </div>
+      <div class="kv"><span class="k">Season</span><span class="v" id="tnSeason"></span></div>
+      <div class="kv"><span class="k">Sunset (Pretoria approx)</span><span class="v" id="tnSunset"></span></div>
+      <div class="kv"><span class="k">Timekeeper on duty</span><span class="v" id="tnTk"></span></div>
+      <div id="tnNote"></div>
+    </div>
+
+    <div class="card">
+      <h2>Set tonight's course</h2>
+      <label>Course / distance for the night</label>
+      <select id="tnCourseSel"></select>
+      <label>Notes for paddlers (optional)</label>
+      <input id="tnNotes" placeholder="e.g. buoy #3 missing — no time bonus tonight">
+      <div class="row wrap" style="margin-top:12px">
+        <button class="wa grow" id="btnAnnounce">📣 Announce to volunteers (WhatsApp)</button>
+        <button class="sec" id="btnStartTrial">Start capturing →</button>
+      </div>
+      <div class="hintbox">The announcement tells the group the start time, distance and who is keeping time — exactly the reminder you asked for.</div>
+    </div>
+  </section>
+
+  <!-- ===================== ROSTER ===================== -->
+  <section class="view" id="view-roster">
+    <h1>Timekeeper roster</h1>
+    <p class="muted small">Tap a duty to remind that person, request a swap, or reassign. A timekeeper who paddles makes the trial unofficial — so swaps matter.</p>
+    <div class="card" id="rosterList"></div>
+    <div class="card">
+      <h2>Add a duty</h2>
+      <div class="row wrap">
+        <input type="date" id="rNewDate" class="grow">
+        <select id="rNewWho" class="grow"></select>
+      </div>
+      <button class="sm sec" style="margin-top:10px" id="rAdd">Add duty</button>
+    </div>
+    <div class="card">
+      <h2>Import season schedule</h2>
+      <p class="small muted">Paste Wayne's WhatsApp schedule. Lines like <code>4 June – Alet</code>; a month/year header (e.g. <code>June 2026</code>) sets the year.</p>
+      <textarea id="schedText" placeholder="June 2026&#10;4 June – Alet&#10;11 June – Johan&#10;..."></textarea>
+      <div class="row wrap" style="margin-top:8px">
+        <label class="row small" style="margin:0;gap:6px"><input type="checkbox" id="schedReplace" style="width:auto"> Replace whole roster</label>
+        <button class="sec grow" id="schedImport">Import schedule</button>
+      </div>
+      <div class="small muted" id="schedResult" style="margin-top:6px"></div>
+    </div>
+  </section>
+
+  <!-- ===================== CAPTURE ===================== -->
+  <section class="view" id="view-capture">
+    <h1>Capture results</h1>
+    <div class="card">
+      <div class="row">
+        <select id="capTrial" class="grow"></select>
+        <button class="sm sec" id="capNew">＋ New race</button>
+      </div>
+      <div class="muted small" id="capTrialInfo" style="margin-top:6px"></div>
+    </div>
+
+    <div id="capSuggest"></div>
+
+    <div class="card" id="raceCard">
+      <div class="row" style="justify-content:space-between;align-items:flex-end">
+        <div>
+          <div class="muted small">Race clock</div>
+          <div class="big raceclock" id="raceClock">0:00.0</div>
+        </div>
+        <button id="btnRace" style="max-width:170px">▶ Start race</button>
+      </div>
+      <div class="tabs" id="capFilter" style="margin-top:14px"></div>
+      <div class="row wrap small muted" style="gap:16px">
+        <span>Long laps <input id="lapsLong" type="number" min="1" style="width:56px;display:inline-block;padding:5px 6px"></span>
+        <span>Short laps <input id="lapsShort" type="number" min="1" style="width:56px;display:inline-block;padding:5px 6px"></span>
+      </div>
+    </div>
+
+    <div class="card" id="boatsCard">
+      <h2>Boats <span class="muted small" id="capCount"></span></h2>
+      <div class="muted small" style="margin-bottom:10px">Tap a boat as it crosses the line to record a lap. Finished boats drop to the bottom.</div>
+      <div id="capList"></div>
+      <button class="wa" id="capShare" style="width:100%;margin-top:12px">📋 Share results to WhatsApp</button>
+    </div>
+
+    <div class="card" id="addCard">
+      <h2>Add a boat</h2>
+      <div class="row wrap">
+        <div style="width:120px"><label>Boat</label><select id="capBoat"></select></div>
+        <div class="grow"><label>Course</label><select id="capCourse"><option value="long">Long</option><option value="short">Short</option></select></div>
+      </div>
+      <div id="capPaddlers"></div>
+      <button id="capAdd" style="margin-top:12px;width:100%">Add boat to race</button>
+    </div>
+  </section>
+
+  <!-- ===================== STANDINGS ===================== -->
+  <section class="view" id="view-standings">
+    <h1>Standings</h1>
+    <div class="tabs" id="standTabs"></div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:6px">
+        <h2 style="margin:0" id="standTitle"></h2>
+        <select id="standClass" style="width:auto;padding:6px 8px"></select>
+      </div>
+      <div id="standTable"></div>
+      <details><summary>How points work</summary>
+        <div class="small muted" style="margin-top:6px">
+          10 pts for 1st boat, 9 for 2nd … 2 pts for 9th, 1 pt for every other finisher.
+          +3 bonus for beating your season-best on the same course (unless a buoy was missing).
+          +10 bonus after every 10 trials completed. Winner = most points; ties broken by season-best time.
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ===================== MEMBERS ===================== -->
+  <section class="view" id="view-members">
+    <h1>Members</h1>
+    <div class="card">
+      <div class="row"><input id="memSearch" placeholder="Search…" class="grow"><button class="sm sec" id="memAdd">+ Add</button></div>
+      <div id="memList" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <h2>Cloud sync</h2>
+      <label>Apps Script Web App URL (…/exec)</label>
+      <input id="cloudUrl" placeholder="https://script.google.com/macros/s/…/exec">
+      <label>Shared token (optional)</label>
+      <input id="cloudToken" placeholder="leave blank if your script runs open">
+      <div class="row wrap" style="margin-top:10px">
+        <button class="sec grow" id="cloudSave">Save & connect</button>
+        <button class="grow" id="cloudSync">🔄 Sync now</button>
+      </div>
+      <button class="wa" style="width:100%;margin-top:10px" id="cloudMembers">⬇️ Pull members from Bar Tab (live)</button>
+      <div class="small muted" id="cloudStatus" style="margin-top:8px"></div>
+      <div class="hintbox">Same Google account as the Bar Tab → this reads its member list directly. Deploy <code>CCC_TT_AppsScript.gs</code> and paste the /exec URL here.</div>
+    </div>
+    <div class="card">
+      <h2>Import members (manual fallback)</h2>
+      <p class="small muted">If the cloud isn't set up yet, paste the Bar Tab <code>CCC_BarTab_Data.json</code> (or its <code>members</code> array). Matched by name; no duplicates.</p>
+      <textarea id="impText" placeholder='{ "members": [ … ] }  or  [ … ]'></textarea>
+      <div class="row" style="margin-top:8px"><button class="sec grow" id="impBtn">Import members</button><button class="ghost" id="seedBtn">Seed roster names</button></div>
+    </div>
+    <div class="card">
+      <h2>Data</h2>
+      <div class="row wrap">
+        <button class="ghost grow" id="expBtn">Export all data</button>
+        <button class="ghost grow" id="wipeBtn">Reset app</button>
+      </div>
+      <div class="small muted" style="margin-top:8px" id="syncInfo"></div>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-v="tonight" class="on"><span class="ic">📅</span>Tonight</button>
+  <button data-v="roster"><span class="ic">🧑‍⚖️</span>Roster</button>
+  <button data-v="capture"><span class="ic">⏱️</span>Capture</button>
+  <button data-v="standings"><span class="ic">🏆</span>Standings</button>
+  <button data-v="members"><span class="ic">👥</span>Members</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const APP_VERSION = "0.5.0";
+const STORE_KEY = "ccc_tk_v1";
+const WA_GROUP = "CCC Volunteer Timekeepers";
+
+/* ---------------- approx Pretoria/Joburg sunset by week (from Winter rules PDF + summer estimate) ---------------- */
+// month index 0-11 -> rough sunset "HH:MM" mid-month; used to advise start time + winter cutoff.
+const SUNSET = ["18:42","18:28","18:02","17:47","17:30","17:23","17:30","17:48","18:00","18:12","18:28","18:42"];
+
+/* ---------------- seed roster (pasted 2026 schedule) ---------------- */
+const SEED_ROSTER = [
+  ["2026-06-04","Alet"],["2026-06-11","Johan"],["2026-06-18","Elton"],["2026-06-25","John Cato"],
+  ["2026-07-02","Louise"],["2026-07-09","Astrid"],["2026-07-16","Erwin"],["2026-07-23","Lizeth"],["2026-07-30","Anya"],
+  ["2026-08-06","Caroline"],["2026-08-13","Darrel"],["2026-08-20","Joe"],["2026-08-27","Nigel"],
+  ["2026-09-03","Marius"],["2026-09-10","Willem"],["2026-09-17","Wayne"],["2026-09-24","Michelle"],
+  ["2026-10-01","Alet"],["2026-10-08","Johan"],["2026-10-15","Elton"],["2026-10-22","John Cato"],["2026-10-29","Louise"],
+  ["2026-11-05","Astrid"],["2026-11-12","Erwin"],["2026-11-19","Lizeth"],["2026-11-26","Anya"],
+  ["2026-12-03","Caroline"],["2026-12-10","Darrel"],["2026-12-17","Joe"]
+];
+
+const BOATS = ["K1","K2","K3","S1","S2","S3"];
+
+/* ---------------- course definitions ---------------- */
+// chosen per-trial; defaults by season. label shown in announcements.
+const COURSES = {
+  summer_long:  {label:"Long course ~10 km (5 laps)", km:10, season:"Summer"},
+  summer_short: {label:"Short course ~5 km",          km:5,  season:"Summer"},
+  winter_2lap:  {label:"Winter 2 laps (~5 km)",       km:5,  season:"Winter"},
+  triples:      {label:"Triple S (paddle + portage)", km:0,  season:"Triple S"}
+};
+
+/* ---------------- cloud config (paste your Apps Script /exec URL in Settings) ---------------- */
+let CLOUD_URL   = localStorage.getItem("ccc_tk_cloud_url")   || ""; // ...script.google.com/macros/s/.../exec
+let CLOUD_TOKEN = localStorage.getItem("ccc_tk_cloud_token") || ""; // optional, must match SHARED_TOKEN
+
+/* ---------------- state ---------------- */
+let S = load();
+function blank(){return {members:[],trials:[],results:[],entries:[],roster:[],courseChoice:{},settings:{lastSync:null},updatedAt:0,rev:0};}
+function load(){
+  try{const j=JSON.parse(localStorage.getItem(STORE_KEY)); if(j&&j.members) return normalize(j);}catch(e){}
+  const s=blank();
+  // seed roster names as lightweight members
+  const names=[...new Set(SEED_ROSTER.map(r=>r[1]))];
+  s.members=names.map((n,i)=>({id:"m"+(i+1),first:n.split(" ")[0],last:n.split(" ").slice(1).join(" "),reg:"",phone:"",gender:"",boat:"K1"}));
+  s.roster=SEED_ROSTER.map(([date,who])=>({date,who}));
+  return s;
+}
+function normalize(d){d.members=d.members||[];d.trials=d.trials||[];d.results=d.results||[];d.entries=d.entries||[];d.roster=d.roster||[];
+  d.courseChoice=d.courseChoice||{};d.settings=d.settings||{};d.updatedAt=d.updatedAt||0;d.rev=d.rev||0;
+  // migrate entries to crew model: stable id + memberIds[]
+  d.entries.forEach(e=>{if(!e.id)e.id="e"+Math.random().toString(36).slice(2,9);
+    if(!e.memberIds)e.memberIds=e.memberId?[e.memberId]:[];if(!e.splits)e.splits=[];});
+  return d;}
+function persistLocal(){localStorage.setItem(STORE_KEY,JSON.stringify(S));}
+function save(){S.updatedAt=Date.now();S.rev=(S.rev||0)+1;persistLocal();schedulePush();renderSyncInfo();}
+
+/* ---------------- cloud sync (last-write-wins by updatedAt; one device captures per trial) ---------------- */
+let _pushTimer=null, _syncing=false;
+function setCloud(url,token){CLOUD_URL=url.trim();CLOUD_TOKEN=(token||"").trim();
+  localStorage.setItem("ccc_tk_cloud_url",CLOUD_URL);localStorage.setItem("ccc_tk_cloud_token",CLOUD_TOKEN);}
+function cloudUrl(action){return CLOUD_URL+(CLOUD_URL.includes("?")?"&":"?")+"action="+action+(CLOUD_TOKEN?"&token="+encodeURIComponent(CLOUD_TOKEN):"");}
+async function cloudGet(action){const r=await fetch(cloudUrl(action),{method:"GET"});return r.json();}
+async function cloudPost(data){ // text/plain avoids a CORS preflight Apps Script can't answer
+  const r=await fetch(CLOUD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body:JSON.stringify({token:CLOUD_TOKEN,data})});return r.json();}
+function schedulePush(){if(!CLOUD_URL)return;clearTimeout(_pushTimer);_pushTimer=setTimeout(pushCloud,1400);}
+async function pushCloud(){if(!CLOUD_URL||_syncing)return;_syncing=true;renderSyncInfo();
+  try{const res=await cloudPost(S);if(res&&res.ok){S.settings.lastSync=Date.now();persistLocal();}}
+  catch(e){/* offline — will retry on next save */}
+  finally{_syncing=false;renderSyncInfo();}}
+async function pullCloud(announce){if(!CLOUD_URL)return;_syncing=true;renderSyncInfo();
+  try{const cloud=await cloudGet("data");
+    if(cloud&&!cloud.error&&(cloud.updatedAt||0)>(S.updatedAt||0)){
+      S=normalize(cloud);persistLocal();renderAll();if(announce)toast("Synced from cloud");}
+  }catch(e){if(announce)toast("Couldn't reach cloud");}
+  finally{_syncing=false;renderSyncInfo();}}
+async function syncNow(){await pullCloud(true);await pushCloud();}
+
+/* ---------------- live member feed from the Bar Tab ---------------- */
+async function pullBarTabMembers(){
+  if(!CLOUD_URL){toast("Set the cloud URL first (Settings)");return;}
+  toast("Fetching members from Bar Tab…");
+  let list;try{list=await cloudGet("members");}catch(e){toast("Couldn't reach cloud");return;}
+  if(!Array.isArray(list)){toast("No member data returned");return;}
+  let added=0,updated=0;
+  list.forEach(o=>{
+    const full=(o.name||((o.first||"")+" "+(o.last||""))).trim();if(!full)return;
+    let m=S.members.find(x=>(x.first+" "+(x.last||"")).trim().toLowerCase()===full.toLowerCase()||x.first.toLowerCase()===full.toLowerCase());
+    if(m){let ch=false;if(o.phone&&!m.phone){m.phone=o.phone;ch=true;}if(o.reg&&!m.reg){m.reg=o.reg;ch=true;}if(o.email&&!m.email){m.email=o.email;ch=true;}if(ch)updated++;}
+    else{const p=full.split(" ");S.members.push({id:"m"+Date.now()+Math.random().toString(36).slice(2,5),
+      first:o.first||p[0],last:o.last||p.slice(1).join(" "),reg:o.reg||"",phone:o.phone||"",email:o.email||"",gender:"",boat:"K1"});added++;}
+  });
+  save();renderMembers();renderRoster();toast("Bar Tab: +"+added+" new, "+updated+" updated");
+}
+
+/* ---------------- helpers ---------------- */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),2200);}
+function pad(n){return String(n).padStart(2,"0");}
+function ymd(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
+function fmtDate(s){const d=new Date(s+"T12:00:00");return d.toLocaleDateString("en-ZA",{weekday:"short",day:"numeric",month:"short"});}
+function memberName(id){const m=S.members.find(x=>x.id===id);return m?((m.first+" "+(m.last||"")).trim()):"—";}
+function nextThursday(){const d=new Date();const day=d.getDay();let add=(4-day+7)%7; // 4 = Thu
+  // if today is Thursday, keep today; else next Thu
+  d.setDate(d.getDate()+add);return d;}
+function parseTime(t){ // "48:30" or "1:02:10" -> seconds
+  if(!t)return null;const p=t.trim().split(":").map(Number);if(p.some(isNaN))return null;
+  if(p.length===2)return p[0]*60+p[1];if(p.length===3)return p[0]*3600+p[1]*60+p[2];if(p.length===1)return p[0];return null;}
+function fmtSecs(s){if(s==null)return"—";const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=Math.round(s%60);
+  return (h?h+":"+pad(m):m+"")+":"+pad(x);}
+function fmtClock(s){if(s==null)return"—";const m=Math.floor(s/60),x=s%60;return m+":"+(x<10?"0":"")+x.toFixed(1);}
+
+/* ---------------- season + start-time logic ---------------- */
+function startTimeFor(date){const m=date.getMonth(); // Apr-Sep (3..8) => 17:00 winter window, else 17:15
+  return (m>=3&&m<=8)?"17:00":"17:15";}
+function seasonFor(date){
+  const m=date.getMonth(),day=date.getDate();
+  // Winter window: 16 Apr - 31 Aug  (rules: 16 Apr–29 Aug; use through Aug)
+  if((m===3&&day>=16)||m===4||m===5||m===6||m===7) return "Winter";
+  // Triple S: ~5 Nov - 4 Feb (special summer sub-series)
+  if((m===10&&day>=5)||m===11||m===0||(m===1&&day<=4)) return "Triple S";
+  return "Summer";
+}
+function defaultCourse(season){
+  if(season==="Winter")return "winter_2lap";
+  if(season==="Triple S")return "triples";
+  return "summer_long";
+}
+
+/* ============================================================= TONIGHT */
+function renderTonight(){
+  const d=nextThursday();const key=ymd(d);const season=seasonFor(d);
+  const start=startTimeFor(d);const sunset=SUNSET[d.getMonth()];
+  const duty=S.roster.find(r=>r.date===key);
+  const courseSel=$("#tnCourseSel");
+  // build course options
+  courseSel.innerHTML=Object.entries(COURSES).map(([k,c])=>`<option value="${k}">${c.label}</option>`).join("");
+  const chosen=S.courseChoice[key]||defaultCourse(season);
+  courseSel.value=chosen;
+
+  $("#tnTitle").textContent = (key===ymd(new Date())?"Today — ":"") + d.toLocaleDateString("en-ZA",{weekday:"long",day:"numeric",month:"long"});
+  $("#tnSub").textContent="Rietvlei Dam time trial";
+  $("#tnStart").textContent=start;
+  $("#tnDist").textContent=COURSES[chosen].km?("~"+COURSES[chosen].km+" km"):"portage";
+  $("#tnSeason").innerHTML=`<span class="pill ${season==="Winter"?"winter":season==="Triple S"?"triples":"summer"}">${season}</span>`;
+  $("#tnSunset").textContent=sunset+"  ·  off water before dark";
+  $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
+
+  let note="";
+  if(season==="Winter") note=`<div class="warnbox">Winter: sunset ~${sunset}. Short course (2 laps) so everyone is off the water in time.</div>`;
+  if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
+  $("#tnNote").innerHTML=note;
+}
+$("#tnCourseSel").addEventListener("change",e=>{
+  const d=nextThursday();S.courseChoice[ymd(d)]=e.target.value;save();renderTonight();
+});
+$("#btnAnnounce").addEventListener("click",()=>{
+  const d=nextThursday();const key=ymd(d);const season=seasonFor(d);
+  const start=startTimeFor(d);const c=COURSES[S.courseChoice[key]||defaultCourse(season)];
+  const duty=S.roster.find(r=>r.date===key);
+  const notes=$("#tnNotes").value.trim();
+  const msg=
+`🛶 *CCC Time Trial — ${fmtDate(key)}*
+⏰ Start: *${start}*
+📏 Tonight: *${c.label}*
+🧑‍⚖️ Timekeeper: *${duty?duty.who:"NOT ASSIGNED — please volunteer"}*
+🌅 Sunset ~${SUNSET[d.getMonth()]} — life jackets compulsory.${notes?"\n📝 "+notes:""}
+
+See you on the water!`;
+  shareWhatsApp(msg);
+});
+$("#btnStartTrial").addEventListener("click",()=>{ensureTrialForTonight();show("capture");});
+
+/* ============================================================= ROSTER */
+function renderRoster(){
+  const today=ymd(new Date());
+  const upcoming=[...S.roster].sort((a,b)=>a.date.localeCompare(b.date));
+  const nextKey=ymd(nextThursday());
+  const html=upcoming.map(r=>{
+    const past=r.date<today;
+    const isNext=r.date===nextKey;
+    const mem=S.members.find(m=>(m.first+" "+(m.last||"")).trim().toLowerCase()===r.who.toLowerCase()||m.first.toLowerCase()===r.who.toLowerCase());
+    return `<div class="duty ${isNext?"next":""}" style="${past?"opacity:.45":""}">
+      <span class="d">${fmtDate(r.date)}</span>
+      <span class="grow"><b>${r.who}</b>${isNext?' <span class="pill summer">next</span>':""}</span>
+      <button class="sm wa" data-remind="${r.date}">remind</button>
+      <button class="sm ghost" data-swap="${r.date}">swap</button>
+    </div>`;
+  }).join("");
+  $("#rosterList").innerHTML=html||'<div class="empty">No duties scheduled.</div>';
+  $$("#rosterList [data-remind]").forEach(b=>b.onclick=()=>remind(b.dataset.remind));
+  $$("#rosterList [data-swap]").forEach(b=>b.onclick=()=>requestSwap(b.dataset.swap));
+  // who select
+  $("#rNewWho").innerHTML='<option value="">— who —</option>'+S.members.map(m=>`<option>${(m.first+" "+(m.last||"")).trim()}</option>`).join("");
+}
+function dutyMemberPhone(who){const m=S.members.find(m=>(m.first+" "+(m.last||"")).trim().toLowerCase()===who.toLowerCase()||m.first.toLowerCase()===who.toLowerCase());return m&&m.phone?m.phone:"";}
+function remind(date){
+  const r=S.roster.find(x=>x.date===date);if(!r)return;const season=seasonFor(new Date(date+"T12:00:00"));
+  const start=startTimeFor(new Date(date+"T12:00:00"));
+  const msg=`Hi ${r.who.split(" ")[0]} 👋 reminder: you're on *timekeeping duty* for the CCC time trial on *${fmtDate(date)}*. Start ${start}. Please be at the dam 10 min early with a stopwatch. If you can't make it, arrange a swap (a timekeeper who paddles makes the trial unofficial). Thanks!`;
+  shareWhatsApp(msg, dutyMemberPhone(r.who));
+}
+function requestSwap(date){
+  const r=S.roster.find(x=>x.date===date);if(!r)return;
+  const msg=`🔁 *Timekeeping swap needed* — ${r.who} can't keep time on *${fmtDate(date)}* (start ${startTimeFor(new Date(date+"T12:00:00"))}). Can anyone take over? Please reply here and I'll update the roster. 🙏`;
+  shareWhatsApp(msg);
+  if(confirm("Posted the swap request. Reassign this duty now?")){
+    const who=prompt("New timekeeper name:",""); if(who){r.who=who.trim();save();renderRoster();renderTonight();toast("Duty reassigned to "+who);}
+  }
+}
+$("#rAdd").addEventListener("click",()=>{
+  const date=$("#rNewDate").value, who=$("#rNewWho").value;
+  if(!date||!who){toast("Pick a date and person");return;}
+  S.roster=S.roster.filter(r=>r.date!==date);S.roster.push({date,who});save();renderRoster();renderTonight();toast("Duty added");
+});
+/* --- Wayne's season schedule import --- */
+const MONTHS={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12,
+  jan:1,feb:2,mar:3,apr:4,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
+function parseSchedule(text){
+  const out=[];let year=new Date().getFullYear();
+  (text||"").split(/\r?\n/).forEach(line=>{
+    const l=line.replace(/[*_`>•]/g,"").trim();if(!l)return;
+    const yr=l.match(/\b(20\d{2})\b/);
+    if(/^[A-Za-z]+\s+20\d{2}$/.test(l)){if(yr)year=+yr[0];return;} // month header e.g. "June 2026"
+    const m=l.match(/^(\d{1,2})\s*([A-Za-z]+)\s*[–—\-]\s*(.+)$/); // "4 June – Alet"
+    if(m){const day=+m[1],mon=MONTHS[m[2].toLowerCase()],who=m[3].trim();
+      if(day&&mon&&who)out.push({date:year+"-"+pad(mon)+"-"+pad(day),who});}
+  });
+  return out;
+}
+$("#schedImport").addEventListener("click",()=>{
+  const parsed=parseSchedule($("#schedText").value);
+  if(!parsed.length){toast("No duties found — check the format");$("#schedResult").textContent="";return;}
+  if($("#schedReplace").checked)S.roster=[];
+  let add=0,upd=0;
+  parsed.forEach(p=>{const ex=S.roster.find(r=>r.date===p.date);
+    if(ex){if(ex.who!==p.who){ex.who=p.who;upd++;}}else{S.roster.push(p);add++;}});
+  save();renderRoster();renderTonight();
+  $("#schedResult").textContent=`Imported ${parsed.length} duties — ${add} new, ${upd} updated.`;
+  $("#schedText").value="";toast("Schedule imported");
+});
+
+/* ============================================================= CAPTURE (live lap timer) */
+let capFilter="ALL", _clock=null;
+function defaultLaps(season){
+  if(season==="Winter")   return {long:2, short:2};
+  if(season==="Triple S") return {long:3, short:3};
+  return {long:5, short:3}; // Summer
+}
+function ensureTrialForTonight(){
+  const d=nextThursday();const key=ymd(d);
+  let t=S.trials.find(x=>x.date===key);
+  if(!t){const season=seasonFor(d);const dl=defaultLaps(season);const duty=S.roster.find(r=>r.date===key);
+    t={id:"t"+Date.now(),date:key,season,start:startTimeFor(d),timekeeper:duty?duty.who:"",
+       buoyShort:false,startedAt:null,lapsLong:dl.long,lapsShort:dl.short};
+    S.trials.push(t);save();}
+  S.capSel=t.id;return t;
+}
+function currentTrial(){const id=(S.capSel)||($("#capTrial")&&$("#capTrial").value);return S.trials.find(t=>t.id===id);}
+function boatSize(b){const n=parseInt((b||"K1").slice(1),10);return n>=1&&n<=3?n:1;} // K2->2, S3->3
+function entryName(e){return (e.memberIds||[]).map(memberName).join(" & ")||"—";}
+function lapTarget(t,course){return course==="short"?(t.lapsShort||2):(t.lapsLong||2);}
+function entryTotal(e){return e.splits&&e.splits.length?e.splits[e.splits.length-1]:null;}
+function entryDone(e,t){return (e.splits?e.splits.length:0)>=lapTarget(t,e.course);}
+function raceElapsed(t){return t&&t.startedAt?(Date.now()-t.startedAt)/1000:0;}
+
+/* --- new race / suggestions --- */
+function priorTrialWithEntries(t){return S.trials.filter(x=>x.date<t.date&&S.entries.some(e=>e.trialId===x.id))
+  .sort((a,b)=>b.date.localeCompare(a.date))[0];}
+function loadLastWeekInto(t){const p=priorTrialWithEntries(t);if(!p)return 0;let n=0;
+  const present=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
+  S.entries.filter(e=>e.trialId===p.id).forEach(e=>{
+    if(!e.memberIds.some(id=>present.has(id))){
+      S.entries.push({id:"e"+Date.now().toString(36)+n,trialId:t.id,memberIds:[...e.memberIds],boat:e.boat,course:e.course,splits:[],lastTap:0});
+      e.memberIds.forEach(id=>present.add(id));n++;}});
+  save();return n;}
+$("#capNew").addEventListener("click",()=>{const t=ensureTrialForTonight();S.capSel=t.id;save();renderCapture();toast("Race ready for "+fmtDate(t.date));});
+
+function renderCapture(){
+  const sel=$("#capTrial");
+  const trials=[...S.trials].sort((a,b)=>b.date.localeCompare(a.date));
+  const has=trials.length>0;
+  ["raceCard","boatsCard","addCard"].forEach(id=>{const el=$("#"+id);if(el)el.style.display=has?"":"none";});
+  if(!has){sel.innerHTML='<option>— no race yet —</option>';$("#capTrialInfo").textContent="Tap “＋ New race”, or “Start capturing” from the Tonight tab.";$("#capSuggest").innerHTML="";return;}
+  sel.innerHTML=trials.map(t=>`<option value="${t.id}">${fmtDate(t.date)} · ${t.season}</option>`).join("");
+  if(!S.capSel||!trials.some(t=>t.id===S.capSel))S.capSel=trials[0].id;
+  sel.value=S.capSel;
+  const t=currentTrial();
+  $("#capTrialInfo").textContent=`${t.season} · start ${t.start} · timekeeper ${t.timekeeper||"—"}`;
+  $("#capBoat").innerHTML=BOATS.map(b=>`<option>${b}</option>`).join("");
+  $("#lapsLong").value=t.lapsLong||2; $("#lapsShort").value=t.lapsShort||2;
+  // suggestion banner
+  const mine=S.entries.filter(e=>e.trialId===t.id);
+  const prior=priorTrialWithEntries(t);
+  $("#capSuggest").innerHTML = (mine.length===0&&prior)
+    ? `<div class="card"><div class="row" style="justify-content:space-between"><span class="small">Last race (${fmtDate(prior.date)}) had <b>${S.entries.filter(e=>e.trialId===prior.id).length}</b> boats.</span><button class="sm wa" id="capLoadLast">Use that list</button></div></div>` : "";
+  if($("#capLoadLast"))$("#capLoadLast").onclick=()=>{const n=loadLastWeekInto(t);renderCapture();toast(n+" boats loaded from last week");};
+  rebuildPaddlerSelects();
+  // race button
+  const btn=$("#btnRace");const clk=$("#raceClock");
+  if(t.startedAt){btn.textContent="● Running — reset";btn.classList.add("danger");clk.classList.add("race-running");clk.textContent=fmtClock(raceElapsed(t));startClock();}
+  else{btn.textContent="▶ Start race";btn.classList.remove("danger");clk.classList.remove("race-running");clk.textContent="0:00.0";stopClock();}
+  renderEntrants();
+}
+function rebuildPaddlerSelects(){
+  const t=currentTrial();if(!t)return;
+  const n=boatSize($("#capBoat").value);
+  const used=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
+  const opts='<option value="">— paddler —</option>'+S.members.filter(m=>!used.has(m.id))
+    .sort((a,b)=>(a.first+a.last).localeCompare(b.first+b.last))
+    .map(m=>`<option value="${m.id}">${(m.first+" "+(m.last||"")).trim()}</option>`).join("");
+  $("#capPaddlers").innerHTML=Array.from({length:n},(_,i)=>
+    `<label>${n>1?"Paddler "+(i+1):"Paddler"}</label><select class="capP" data-i="${i}">${opts}</select>`).join("");
+}
+function renderEntrants(){
+  const t=currentTrial();if(!t)return;
+  $("#capFilter").innerHTML=["ALL","long","short"].map(f=>`<button class="${f===capFilter?"on":""}" data-f="${f}">${f==="ALL"?"All":f[0].toUpperCase()+f.slice(1)}</button>`).join("");
+  $$("#capFilter button").forEach(b=>b.onclick=()=>{capFilter=b.dataset.f;renderEntrants();});
+  let list=S.entries.filter(e=>e.trialId===t.id);
+  if(capFilter!=="ALL")list=list.filter(e=>e.course===capFilter);
+  const active=list.filter(e=>!entryDone(e,t)).sort((a,b)=>(a.lastTap||0)-(b.lastTap||0));
+  const done=list.filter(e=>entryDone(e,t)).sort((a,b)=>entryTotal(a)-entryTotal(b));
+  $("#capCount").textContent=`· ${active.length} on water · ${done.length} finished`;
+  const rowActive=e=>{const tgt=lapTarget(t,e.course);const n=e.splits.length;
+    const last=n?fmtClock(e.splits[n-1]-(n>1?e.splits[n-2]:0)):null;
+    return `<div class="boatrow active" data-lap="${e.id}">
+      <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>
+        <div class="small muted">${e.course==="short"?"Short":"Long"} · Lap ${n}/${tgt}${n?` · last ${last} · total ${fmtClock(entryTotal(e))}`:""}</div></div>
+      ${n?`<button class="undo" data-undo="${e.id}">↩</button>`:""}
+      <button class="lapbtn">Lap</button></div>`;};
+  const rowDone=e=>`<div class="boatrow done">
+      <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>
+        <div class="small muted">${e.course==="short"?"Short":"Long"} · ✓ finished (${e.splits.length} laps)</div></div>
+      <span class="num">${fmtClock(entryTotal(e))}</span>
+      <button class="undo" data-undo="${e.id}">↩</button></div>`;
+  const finishedHdr=done.length?`<div class="small muted" style="margin:6px 0">Finished</div>`:"";
+  $("#capList").innerHTML=(active.map(rowActive).join("")||(done.length?"":'<div class="empty">No boats yet — add them below, or load last week’s list.</div>'))+finishedHdr+done.map(rowDone).join("");
+  $$('#capList .boatrow.active').forEach(r=>r.onclick=()=>recordLap(r.dataset.lap));
+  $$('#capList [data-undo]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();undoLap(b.dataset.undo);});
+}
+function recordLap(eid){
+  const t=currentTrial();if(!t)return;
+  if(!t.startedAt){toast("Tap ▶ Start race first");return;}
+  const e=S.entries.find(x=>x.id===eid);if(!e)return;
+  if(entryDone(e,t))return;
+  e.splits.push(+raceElapsed(t).toFixed(1));e.lastTap=Date.now();
+  save();renderEntrants();
+  if(entryDone(e,t))toast(entryName(e)+" finished · "+fmtClock(entryTotal(e)));
+}
+function undoLap(eid){
+  const t=currentTrial();const e=S.entries.find(x=>x.id===eid);if(!e)return;
+  if(e.splits.length){e.splits.pop();save();renderEntrants();}
+  else if(confirm("Remove "+entryName(e)+" from the race?")){S.entries=S.entries.filter(x=>x.id!==eid);save();rebuildPaddlerSelects();renderEntrants();}
+}
+$("#capTrial").addEventListener("change",e=>{S.capSel=e.target.value;save();renderCapture();});
+$("#btnRace").addEventListener("click",()=>{
+  const t=currentTrial();if(!t)return;
+  if(!t.startedAt){t.startedAt=Date.now();save();renderCapture();toast("Race started 🏁");}
+  else if(confirm("Reset the race clock? Lap times already recorded are kept.")){t.startedAt=null;save();renderCapture();}
+});
+$("#lapsLong").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsLong=Math.max(1,+e.target.value||2);save();renderEntrants();}});
+$("#lapsShort").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsShort=Math.max(1,+e.target.value||2);save();renderEntrants();}});
+$("#capBoat").addEventListener("change",rebuildPaddlerSelects);
+$("#capAdd").addEventListener("click",()=>{
+  const t=currentTrial();if(!t){toast("Start a race first");return;}
+  const boat=$("#capBoat").value,course=$("#capCourse").value;
+  const ids=$$(".capP").map(s=>s.value);
+  if(ids.some(x=>!x)){toast("Pick all "+boatSize(boat)+" paddler(s)");return;}
+  if(new Set(ids).size!==ids.length){toast("Same paddler picked twice");return;}
+  ids.forEach(id=>{const m=S.members.find(x=>x.id===id);if(m)m.boat=boat;});
+  S.entries.push({id:"e"+Date.now().toString(36),trialId:t.id,memberIds:ids,boat,course,splits:[],lastTap:0});
+  save();rebuildPaddlerSelects();renderEntrants();toast("Added "+entryName({memberIds:ids}));
+});
+/* --- results message for WhatsApp --- */
+function buildResults(t){
+  const lines=[`🏆 *CCC Time Trial — ${fmtDate(t.date)}* (${t.season})`];
+  ["long","short"].forEach(course=>{
+    const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
+      .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
+    if(!g.length)return;
+    lines.push("\n*"+(course==="short"?"SHORT COURSE":"LONG COURSE")+"*");
+    g.forEach((x,i)=>lines.push(`${i+1}. ${entryName(x.e)} (${x.e.boat}) — ${fmtClock(x.total)}`));
+  });
+  const dnf=S.entries.filter(e=>e.trialId===t.id&&!entryDone(e,t)).length;
+  if(dnf)lines.push(`\n(${dnf} boat${dnf>1?"s":""} did not finish)`);
+  lines.push("\nWell done all! 🛶");
+  return lines.join("\n");
+}
+$("#capShare").addEventListener("click",()=>{const t=currentTrial();if(!t){toast("No race");return;}
+  if(!S.entries.some(e=>e.trialId===t.id&&entryDone(e,t))){toast("No finishers yet");return;}
+  shareWhatsApp(buildResults(t));});
+/* race clock ticker */
+function startClock(){stopClock();_clock=setInterval(()=>{const t=currentTrial();const el=$("#raceClock");
+  if(t&&t.startedAt&&el)el.textContent=fmtClock(raceElapsed(t));},100);}
+function stopClock(){if(_clock){clearInterval(_clock);_clock=null;}}
+
+/* ============================================================= STANDINGS / SCORING */
+let standSeason="Summer", standClass="ALL";
+function pointsForPosition(pos){return pos<=9?(11-pos):1;}
+function computeStandings(season,boatFilter){
+  // Positions are scored WITHIN each course group (long/short) per trial — you can't
+  // rank a 5km short-course time against a 10km long-course time.
+  const trials=S.trials.filter(t=>t.season===season);
+  const tally={}; // memberId -> {pts, best, count, name, courseBest}
+  trials.forEach(t=>{
+    ["long","short"].forEach(course=>{
+      const group=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
+        .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
+      group.forEach((g,i)=>{
+        const r=g.e;if(boatFilter!=="ALL"&&r.boat!==boatFilter)return;
+        const pts=pointsForPosition(i+1);
+        (r.memberIds||[]).forEach(id=>{ // every crew member earns the boat's position points
+          tally[id]=tally[id]||{pts:0,best:null,count:0,name:memberName(id),courseBest:{}};
+          const e=tally[id];
+          e.pts+=pts;
+          e.count++;
+          const cb=e.courseBest[course]; // season-best per course, skip if buoy-shortened
+          if(!t.buoyShort && cb!=null && g.total<cb){e.pts+=3;}
+          if(cb==null||g.total<cb)e.courseBest[course]=g.total;
+          if(e.best==null||g.total<e.best)e.best=g.total;
+        });
+      });
+    });
+  });
+  Object.values(tally).forEach(e=>{e.pts+=Math.floor(e.count/10)*10;}); // +10 per 10 trials
+  return Object.entries(tally).map(([id,e])=>({id,...e}))
+    .sort((a,b)=>b.pts-a.pts || (a.best||9e9)-(b.best||9e9));
+}
+function renderStandings(){
+  const seasons=["Summer","Winter","Triple S"];
+  $("#standTabs").innerHTML=seasons.map(s=>`<button class="${s===standSeason?"on":""}" data-s="${s}">${s}</button>`).join("");
+  $$("#standTabs button").forEach(b=>b.onclick=()=>{standSeason=b.dataset.s;renderStandings();});
+  $("#standClass").innerHTML='<option value="ALL">All boats</option>'+BOATS.map(b=>`<option value="${b}">${b} only</option>`).join("");
+  $("#standClass").value=standClass;
+  $("#standClass").onchange=e=>{standClass=e.target.value;renderStandings();};
+  $("#standTitle").textContent=standSeason+" League";
+  const rows=computeStandings(standSeason,standClass);
+  if(!rows.length){$("#standTable").innerHTML='<div class="empty">No results captured for '+standSeason+' yet.</div>';return;}
+  $("#standTable").innerHTML=`<table><thead><tr><th>#</th><th>Paddler</th><th class="num">Trials</th><th class="num">Best</th><th class="num">Points</th></tr></thead><tbody>${
+    rows.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="num">${r.count}</td><td class="num">${fmtSecs(r.best)}</td><td class="num"><b>${r.pts}</b></td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+/* ============================================================= MEMBERS */
+function renderMembers(){
+  const q=($("#memSearch").value||"").toLowerCase();
+  const list=S.members.filter(m=>((m.first+" "+(m.last||"")+" "+m.reg)).toLowerCase().includes(q))
+    .sort((a,b)=>(a.first+a.last).localeCompare(b.first+b.last));
+  $("#memList").innerHTML=list.length?list.map(m=>`<div class="duty">
+      <span class="grow"><b>${(m.first+" "+(m.last||"")).trim()}</b>
+      <span class="small muted">${m.boat||""}${m.reg?" · #"+m.reg:""}${m.phone?" · "+m.phone:""}</span></span>
+      <button class="sm ghost" data-edit="${m.id}">edit</button>
+    </div>`).join(""):'<div class="empty">No members.</div>';
+  $$("#memList [data-edit]").forEach(b=>b.onclick=()=>editMember(b.dataset.edit));
+}
+function editMember(id){
+  const m=S.members.find(x=>x.id===id);if(!m)return;
+  const first=prompt("First name:",m.first);if(first===null)return;
+  const last=prompt("Surname:",m.last||"");if(last===null)return;
+  const reg=prompt("Registration number:",m.reg||"");if(reg===null)return;
+  const phone=prompt("Phone (e.g. +2783…):",m.phone||"");if(phone===null)return;
+  const email=prompt("Email (for duty reminders):",m.email||"");if(email===null)return;
+  Object.assign(m,{first:first.trim(),last:last.trim(),reg:reg.trim(),phone:phone.trim(),email:email.trim()});save();renderMembers();renderRoster();
+}
+$("#memAdd").addEventListener("click",()=>{
+  const m={id:"m"+Date.now(),first:"New",last:"Member",reg:"",phone:"",gender:"",boat:"K1"};
+  S.members.push(m);save();editMember(m.id);
+});
+$("#memSearch").addEventListener("input",renderMembers);
+$("#impBtn").addEventListener("click",()=>{
+  let raw;try{raw=JSON.parse($("#impText").value);}catch(e){toast("Invalid JSON");return;}
+  const arr=Array.isArray(raw)?raw:(raw.members||raw.S&&raw.S.members);
+  if(!Array.isArray(arr)){toast("Couldn't find a members array");return;}
+  let added=0;
+  arr.forEach(o=>{
+    const full=(o.name||((o.first||o.firstName||"")+" "+(o.last||o.surname||o.lastName||""))).trim();
+    if(!full)return;
+    const exists=S.members.some(m=>(m.first+" "+(m.last||"")).trim().toLowerCase()===full.toLowerCase());
+    if(exists)return;
+    const parts=full.split(" ");
+    S.members.push({id:"m"+Date.now()+Math.random().toString(36).slice(2,5),
+      first:parts[0],last:parts.slice(1).join(" "),
+      reg:o.reg||o.registration||o.regNo||"",phone:o.phone||o.cell||o.mobile||"",gender:o.gender||"",boat:"K1"});
+    added++;
+  });
+  save();renderMembers();toast("Imported "+added+" members");
+});
+$("#seedBtn").addEventListener("click",()=>{S=blank();S.members=load().members;S.roster=load().roster;save();renderAll();toast("Roster names seeded");});
+$("#expBtn").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="CCC_TT_Data.json";a.click();
+});
+$("#wipeBtn").addEventListener("click",()=>{if(confirm("Erase all timekeeping data on this device?")){localStorage.removeItem(STORE_KEY);S=load();save();renderAll();toast("Reset");}});
+function renderSyncInfo(){
+  const last=S.settings&&S.settings.lastSync?new Date(S.settings.lastSync).toLocaleString("en-ZA"):"never";
+  const state=!CLOUD_URL?"Not connected — local only.":(_syncing?"Syncing…":"Connected ✓");
+  const el=$("#syncInfo");if(el)el.textContent=`${CLOUD_URL?"Cloud":"Local"} · last sync: ${last}`;
+  const cs=$("#cloudStatus");if(cs)cs.textContent=state+(CLOUD_URL?"  ·  rev "+(S.rev||0):"");
+}
+// cloud settings wiring
+(function(){
+  const u=$("#cloudUrl"),t=$("#cloudToken");if(u)u.value=CLOUD_URL;if(t)t.value=CLOUD_TOKEN;
+  $("#cloudSave").addEventListener("click",async()=>{
+    setCloud($("#cloudUrl").value,$("#cloudToken").value);
+    if(!CLOUD_URL){toast("Cleared cloud URL");renderSyncInfo();return;}
+    toast("Connecting…");try{const p=await cloudGet("ping");if(p&&p.ok){toast("Connected ✓");await syncNow();}else toast("Connected, but server said: "+(p.error||"?"));}
+    catch(e){toast("Couldn't reach that URL");}renderSyncInfo();
+  });
+  $("#cloudSync").addEventListener("click",()=>syncNow());
+  $("#cloudMembers").addEventListener("click",pullBarTabMembers);
+})();
+
+/* ============================================================= WHATSAPP */
+function shareWhatsApp(text, phone){
+  // Direct DM if we have a phone; else open WhatsApp share / copy for the group.
+  if(phone){const num=phone.replace(/[^0-9]/g,"").replace(/^0/,"27");
+    window.open("https://wa.me/"+num+"?text="+encodeURIComponent(text),"_blank");return;}
+  if(navigator.share){navigator.share({text}).catch(()=>copy(text));}
+  else if(/Android|iPhone|iPad/i.test(navigator.userAgent)){window.open("https://wa.me/?text="+encodeURIComponent(text),"_blank");}
+  else copy(text);
+}
+function copy(text){navigator.clipboard?.writeText(text).then(()=>toast("Message copied — paste into "+WA_GROUP),()=>prompt("Copy this:",text));}
+
+/* ============================================================= NAV */
+function show(v){
+  if(v!=="capture")stopClock();
+  $$(".view").forEach(s=>s.classList.toggle("on",s.id==="view-"+v));
+  $$("nav button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+  if(v==="tonight")renderTonight();
+  if(v==="roster")renderRoster();
+  if(v==="capture")renderCapture();
+  if(v==="standings")renderStandings();
+  if(v==="members")renderMembers();
+  window.scrollTo(0,0);
+}
+$$("nav button").forEach(b=>b.onclick=()=>show(b.dataset.v));
+
+function renderAll(){renderTonight();renderRoster();renderCapture();renderStandings();renderMembers();renderSyncInfo();}
+$("#verTag").textContent="v"+APP_VERSION;
+// default standings season = current season
+standSeason=seasonFor(new Date());if(standSeason==="Triple S")standSeason="Triple S";
+renderAll();
+if(CLOUD_URL) pullCloud(false); // sync down on startup
+if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}
+</script>
+</body>
+</html>
