@@ -28,6 +28,10 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.10.0 Course distances (long lap 2.3km / short lap 1.4km, admin-editable) → avg km/h per boat;
+          "⬆ PB" flag when a paddler beats their previous best on that course. Share-to-group now
+          shows a copyable message box + Open-group. Quick-add chips show last race's boats first.
+          Results message + Excel include avg speed + PB. Model supports imported (total-only) results.
    0.9.0  Member edit is now a full form (First+Surname required; phone/email/sex/age/nickname/boat/reg
           optional; remove member). WhatsApp: announcements+swaps open the timekeepers group, results
           open the results group (links editable by admin); individual reminders DM the member's number.
@@ -311,6 +315,7 @@
     <h1>Members</h1>
     <div class="card" id="accessCard"></div>
     <div class="card adminonly" id="waCard"></div>
+    <div class="card adminonly" id="distCard"></div>
     <div class="card">
       <div class="row"><input id="memSearch" placeholder="Search…" class="grow"><button class="sm sec adminonly" id="memAdd">+ Add</button></div>
       <div id="memList" style="margin-top:8px"></div>
@@ -373,7 +378,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.9.0";
+const APP_VERSION = "0.10.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -426,7 +431,7 @@ const BOATS = ["K1","K2","K3","S1","S2","S3"];
 const COURSES = {
   summer_long:  {label:"Long course ~10 km (5 laps)", km:10, season:"Summer"},
   summer_short: {label:"Short course ~5 km",          km:5,  season:"Summer"},
-  winter_2lap:  {label:"Winter 2 laps (~5 km)",       km:5,  season:"Winter"},
+  winter_2lap:  {label:"Winter — long 4.6 km (2 laps) + short 4.2 km (3 laps)", km:4.6, season:"Winter"},
   triples:      {label:"Triple S (paddle + portage)", km:0,  season:"Triple S"}
 };
 
@@ -453,6 +458,8 @@ function normalize(d){d.members=d.members||[];d.trials=d.trials||[];d.results=d.
   if(d.settings.appPin==null)d.settings.appPin="";if(d.settings.adminPin==null)d.settings.adminPin="";
   if(d.settings.waGroupTimekeepers==null)d.settings.waGroupTimekeepers="https://chat.whatsapp.com/JpSx0RiRlpiFk4YaVfIh5D?s=cl&p=i&mlu=4&amv=1";
   if(d.settings.waGroupResults==null)d.settings.waGroupResults="https://chat.whatsapp.com/FZiTNLhh7RiF4l3Oey5WD4?s=cl&p=i&mlu=4&amv=1";
+  if(d.settings.longLapKm==null)d.settings.longLapKm=2.3; // long lap distance (2 laps = 4.6 km)
+  if(d.settings.shortLapKm==null)d.settings.shortLapKm=1.4; // short lap distance (3 laps = 4.2 km)
   // migrate entries to crew model: stable id + memberIds[]
   d.entries.forEach(e=>{if(!e.id)e.id="e"+Math.random().toString(36).slice(2,9);
     if(!e.memberIds)e.memberIds=e.memberId?[e.memberId]:[];if(!e.splits)e.splits=[];});
@@ -583,7 +590,7 @@ $("#btnAnnounce").addEventListener("click",()=>{
 🌅 Sunset ~${SUNSET[d.getMonth()]} — life jackets compulsory.${notes?"\n📝 "+notes:""}
 
 See you on the water!`;
-  shareToGroup(msg,"timekeepers");
+  shareModal("Announce to timekeepers",msg,"timekeepers");
 });
 $("#btnStartTrial").addEventListener("click",()=>{ensureTrialForTonight();show("capture");});
 
@@ -629,7 +636,7 @@ function requestSwap(date){
     r.who=memberFull(m);r.reminded=false;save();renderRoster();renderTonight();remind(date);toast("Reassigned to "+r.who);
   },"Reassign");
   const ask=$("#swapAsk");if(ask)ask.onclick=()=>{closeModal();
-    shareToGroup(`🔁 *Timekeeping swap needed* — ${r.who} can't keep time on *${fmtDate(date)}* (start ${startTimeFor(new Date(date+"T12:00:00"))}). Can anyone take over? Reply here. 🙏`,"timekeepers");};
+    shareModal("Swap request",`🔁 *Timekeeping swap needed* — ${r.who} can't keep time on *${fmtDate(date)}* (start ${startTimeFor(new Date(date+"T12:00:00"))}). Can anyone take over? Reply here. 🙏`,"timekeepers");};
 }
 $("#rAdd").addEventListener("click",()=>{
   const date=$("#rNewDate").value, who=$("#rNewWho").value;
@@ -693,9 +700,22 @@ function currentTrial(){const id=(S.capSel)||($("#capTrial")&&$("#capTrial").val
 function boatSize(b){const n=parseInt((b||"K1").slice(1),10);return n>=1&&n<=3?n:1;} // K2->2, S3->3
 function entryName(e){return (e.memberIds||[]).map(memberName).join(" & ")||"—";}
 function lapTarget(t,course){return course==="short"?(t.lapsShort||2):(t.lapsLong||2);}
-function entryTotal(e){return e.splits&&e.splits.length?e.splits[e.splits.length-1]:null;}
-function entryDone(e,t){return (e.splits?e.splits.length:0)>=lapTarget(t,e.course);}
+function entryTotal(e){return (e.total!=null)?e.total:(e.splits&&e.splits.length?e.splits[e.splits.length-1]:null);}
+function entryDone(e,t){return e.done===true || (e.splits?e.splits.length:0)>=lapTarget(t,e.course);} // imported results set total+done
 function raceElapsed(t){return t&&t.startedAt?(Date.now()-t.startedAt)/1000:0;}
+function lapKm(course){return course==="short"?(+S.settings.shortLapKm||1.4):(+S.settings.longLapKm||2.3);}
+function entryKm(e){return lapKm(e.course)*((e.splits&&e.splits.length)||lapTarget(currentTrial()||{},e.course));}
+function entrySpeed(e){const tot=entryTotal(e);return tot?entryKm(e)/(tot/3600):null;} // km/h
+function fmtSpeed(s){return s==null?"":s.toFixed(1)+" km/h";}
+// a member's best total on a course strictly before a date (for improvement tracking)
+function priorBest(memberId,course,beforeDate){let best=null;
+  S.entries.forEach(e=>{if(!e.memberIds||!e.memberIds.includes(memberId)||e.course!==course)return;
+    const tr=S.trials.find(t=>t.id===e.trialId);if(!tr||tr.date>=beforeDate||!entryDone(e,tr))return;
+    const tot=entryTotal(e);if(best==null||tot<best)best=tot;});
+  return best;}
+function entryImproved(e){const tr=S.trials.find(t=>t.id===e.trialId);if(!tr||!entryDone(e,tr))return false;
+  const tot=entryTotal(e);
+  return (e.memberIds||[]).some(id=>{const pb=priorBest(id,e.course,tr.date);return pb!=null&&tot<pb;});}
 
 /* --- new race / suggestions --- */
 function priorTrialWithEntries(t){return S.trials.filter(x=>x.date<t.date&&S.entries.some(e=>e.trialId===x.id))
@@ -750,7 +770,7 @@ function frequentCombos(curId){
   });
   return Object.values(map).map(m=>{
     m.course=Object.keys(m.courseCount).sort((a,b)=>m.courseCount[b]-m.courseCount[a])[0]||"long";return m;
-  }).sort((a,b)=>b.count-a.count||b.lastDate.localeCompare(a.lastDate));
+  }).sort((a,b)=>b.lastDate.localeCompare(a.lastDate)||b.count-a.count); // last race's boats first, then most-used
 }
 function renderQuickAdd(){
   const t=currentTrial();if(!t){$("#capQuick").innerHTML="";return;}
@@ -795,11 +815,12 @@ function renderEntrants(){
         <div class="small muted">${e.course==="short"?"Short":"Long"} · Lap ${n}/${tgt}${n?` · last ${last} · total ${fmtClock(entryTotal(e))}`:""}</div></div>
       ${n?`<button class="undo" data-undo="${e.id}">↩</button>`:""}
       <button class="lapbtn">Lap</button></div>`;};
-  const rowDone=e=>`<div class="boatrow done">
-      <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>
-        <div class="small muted">${e.course==="short"?"Short":"Long"} · ✓ finished (${e.splits.length} laps)</div></div>
+  const rowDone=e=>{const sp=entrySpeed(e),imp=entryImproved(e);
+    return `<div class="boatrow done">
+      <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>${imp?' <span class="pill triples">⬆ PB</span>':""}
+        <div class="small muted">${e.course==="short"?"Short":"Long"} · ${e.splits.length} laps${sp?" · "+fmtSpeed(sp):""}</div></div>
       <span class="num">${fmtClock(entryTotal(e))}</span>
-      <button class="undo" data-undo="${e.id}">↩</button></div>`;
+      <button class="undo" data-undo="${e.id}">↩</button></div>`;};
   const finishedHdr=done.length?`<div class="small muted" style="margin:6px 0">Finished</div>`:"";
   $("#capList").innerHTML=(active.map(rowActive).join("")||(done.length?"":'<div class="empty">No boats yet — add them below, or load last week’s list.</div>'))+finishedHdr+done.map(rowDone).join("");
   $$('#capList .boatrow.active').forEach(r=>r.onclick=()=>recordLap(r.dataset.lap));
@@ -845,8 +866,10 @@ function buildResults(t){
     const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
       .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
     if(!g.length)return;
-    lines.push("\n*"+(course==="short"?"SHORT COURSE":"LONG COURSE")+"*");
-    g.forEach((x,i)=>lines.push(`${i+1}. ${entryName(x.e)} (${x.e.boat}) — ${fmtClock(x.total)}`));
+    const km=lapKm(course)*lapTarget(t,course);
+    lines.push("\n*"+(course==="short"?"SHORT COURSE":"LONG COURSE")+(km?` (${km.toFixed(1)} km)`:"")+"*");
+    g.forEach((x,i)=>{const sp=entrySpeed(x.e),imp=entryImproved(x.e);
+      lines.push(`${i+1}. ${entryName(x.e)} (${x.e.boat}) — ${fmtClock(x.total)}${sp?" · "+sp.toFixed(1)+"km/h":""}${imp?" ⬆PB":""}`);});
   });
   const dnf=S.entries.filter(e=>e.trialId===t.id&&!entryDone(e,t)).length;
   if(dnf)lines.push(`\n(${dnf} boat${dnf>1?"s":""} did not finish)`);
@@ -855,7 +878,7 @@ function buildResults(t){
 }
 $("#capShare").addEventListener("click",()=>{const t=currentTrial();if(!t){toast("No race");return;}
   if(!S.entries.some(e=>e.trialId===t.id&&entryDone(e,t))){toast("No finishers yet");return;}
-  shareToGroup(buildResults(t),"results");});
+  shareModal("Post results",buildResults(t),"results");});
 /* race clock ticker */
 function startClock(){stopClock();_clock=setInterval(()=>{const t=currentTrial();const el=$("#raceClock");
   if(t&&t.startedAt&&el)el.textContent=fmtClock(raceElapsed(t));},100);}
@@ -915,12 +938,13 @@ function buildAOAs(season){
   // simpler fixed header
   standAOA.length=0; standAOA.push(["Rank","Paddler","Trials","Best time","Points"]);
   stand.forEach((r,i)=>standAOA.push([i+1,r.name,r.count,fmtClock(r.best),r.pts]));
-  const resAOA=[["Date","Course","Pos","Crew","Boat","Total","Points"]];
+  const resAOA=[["Date","Course","Pos","Crew","Boat","Total","Avg km/h","PB","Points"]];
   S.trials.filter(t=>t.season===season).sort((a,b)=>a.date.localeCompare(b.date)).forEach(t=>{
     ["long","short"].forEach(course=>{
       const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
         .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
-      g.forEach((x,i)=>resAOA.push([t.date,course,i+1,x.e.memberIds.map(memberName).join(" & "),x.e.boat,fmtClock(x.total),pointsForPosition(i+1)]));
+      g.forEach((x,i)=>{const sp=entrySpeed(x.e);
+        resAOA.push([t.date,course,i+1,x.e.memberIds.map(memberName).join(" & "),x.e.boat,fmtClock(x.total),sp?sp.toFixed(1):"",entryImproved(x.e)?"yes":"",pointsForPosition(i+1)]);});
     });
   });
   return {standAOA,resAOA};
@@ -977,7 +1001,7 @@ function renderMembers(){
       <span class="small muted">${m.boat||""}${m.reg?" · #"+m.reg:""}${m.phone?" · "+m.phone:""}${m.email?" · ✉":""}</span></span>
       <button class="sm ghost adminonly" data-edit="${m.id}">edit</button>
     </div>`).join(""):'<div class="empty">No members.</div>';
-  renderAccess();renderWaGroups();
+  renderAccess();renderWaGroups();renderDistances();
   $$("#memList [data-edit]").forEach(b=>b.onclick=()=>editMember(b.dataset.edit));
 }
 /* ============================================================= ACCESS (club PIN + admin PIN) */
@@ -1033,6 +1057,19 @@ function renderWaGroups(){
     <label>Results group link</label><input id="waRes" value="${(S.settings.waGroupResults||"").replace(/"/g,"&quot;")}">
     <button id="waSave" style="margin-top:10px">Save groups</button>`;
   $("#waSave").onclick=()=>{S.settings.waGroupTimekeepers=$("#waTk").value.trim();S.settings.waGroupResults=$("#waRes").value.trim();save();toast("Groups saved");};
+}
+function renderDistances(){
+  const el=$("#distCard");if(!el)return;
+  const ll=+S.settings.longLapKm||2.3, sl=+S.settings.shortLapKm||1.4;
+  el.innerHTML=`<h2>Course distances</h2>
+    <p class="small muted">Used to work out each boat's average speed. Lap counts per night are set on the Capture tab.</p>
+    <div class="row wrap">
+      <div class="grow"><label>Long lap (km)</label><input id="dLong" type="number" step="0.1" value="${ll}"></div>
+      <div class="grow"><label>Short lap (km)</label><input id="dShort" type="number" step="0.1" value="${sl}"></div>
+    </div>
+    <div class="small muted" style="margin-top:6px">Now: long ${(ll*2).toFixed(1)} km (2 laps) · short ${(sl*3).toFixed(1)} km (3 laps)</div>
+    <button id="dSave" style="margin-top:10px">Save distances</button>`;
+  $("#dSave").onclick=()=>{S.settings.longLapKm=+$("#dLong").value||2.3;S.settings.shortLapKm=+$("#dShort").value||1.4;save();renderDistances();renderCapture();toast("Distances saved");};
 }
 
 function editMember(id){
@@ -1127,6 +1164,17 @@ function shareToGroup(text,which){ // copies the message + opens the right Whats
   if(navigator.clipboard){navigator.clipboard.writeText(text).catch(()=>{});toast("Message copied — paste it into the group");}
   else prompt("Copy this message, then paste into the group:",text);
   if(url)window.open(url,"_blank");
+}
+// shows the message in a copyable box, then "Open group" so you can paste it
+function shareModal(title,text,which){
+  const url=waGroup(which);
+  const body=`<p class="small muted">Tap <b>Copy message</b>, then <b>Open group</b> and paste it in.</p>
+    <textarea id="shareMsg" style="min-height:150px">${text.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</textarea>
+    <button class="wa" id="shareCopy" style="width:100%;margin-top:8px">📋 Copy message</button>`;
+  openModal(title,body,()=>{if(url)window.open(url,"_blank");},"Open group ▶");
+  const c=$("#shareCopy");if(c)c.onclick=()=>{const ta=$("#shareMsg");ta.focus();ta.select();
+    try{document.execCommand("copy");}catch(e){}if(navigator.clipboard)navigator.clipboard.writeText(ta.value).catch(()=>{});
+    toast("Copied — now Open group & paste");};
 }
 
 /* ============================================================= NAV */
