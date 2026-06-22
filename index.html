@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.15.0 Long course = long laps + appended short laps (e.g. 2 long + 1 short). Sunset-based
+          suggestion (each ~10 min later sunset adds a lap: 2L → 2L+1S → 3L → 3L+1S) on Tonight +
+          Capture with "Use suggestion". Fixed avg-speed to use each entry's own trial distance.
    0.14.0 Standings can filter by course (All / Long only / Short only) so long- and short-course
           paddlers are ranked separately. (Backend: doPost hardened — unknown actions can never
           overwrite the document. Member birthdays populated from SA ID numbers.)
@@ -268,10 +271,11 @@
         <button id="btnRace" style="max-width:170px">▶ Start race</button>
       </div>
       <div class="tabs" id="capFilter" style="margin-top:14px"></div>
-      <div class="row wrap small muted" style="gap:16px">
-        <span>Long laps <input id="lapsLong" type="number" min="1" style="width:56px;display:inline-block;padding:5px 6px"></span>
-        <span>Short laps <input id="lapsShort" type="number" min="1" style="width:56px;display:inline-block;padding:5px 6px"></span>
+      <div class="row wrap small muted" style="gap:16px;align-items:center">
+        <span>Long course: <input id="lapsLong" type="number" min="1" style="width:50px;display:inline-block;padding:5px 6px"> long + <input id="longShortLaps" type="number" min="0" style="width:50px;display:inline-block;padding:5px 6px"> short</span>
+        <span>Short course: <input id="lapsShort" type="number" min="1" style="width:50px;display:inline-block;padding:5px 6px"> laps</span>
       </div>
+      <div class="small" id="lapSuggest" style="margin-top:6px"></div>
     </div>
 
     <div class="card" id="boatsCard">
@@ -390,7 +394,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.14.0";
+const APP_VERSION = "0.15.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -596,7 +600,8 @@ function renderTonight(){
   $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
 
   let note="";
-  if(season==="Winter") note=`<div class="warnbox">Winter: sunset ~${sunset}. Long ${(S.settings.longLapKm*2).toFixed(1)} km (2 laps) + short ${(S.settings.shortLapKm*3).toFixed(1)} km (3 laps) — be off the water before dark.</div>`;
+  if(season==="Winter"){const sg=suggestCourse(d);const lk=(sg.long*(+S.settings.longLapKm||2.3)+sg.longShort*(+S.settings.shortLapKm||1.4));
+    note=`<div class="warnbox">Winter: sunset ~${sunset}. Suggested long course: <b>${courseLabel(sg.long,sg.longShort)}</b> (~${lk.toFixed(1)} km) — back-markers should be finishing their last lap as the sun sets.</div>`;}
   if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
   $("#tnNote").innerHTML=note;
 }
@@ -728,21 +733,38 @@ function ensureTrialForTonight(){
   const d=nextThursday();const key=ymd(d);
   let t=S.trials.find(x=>x.date===key);
   if(!t){const season=seasonFor(d);const dl=defaultLaps(season);const duty=S.roster.find(r=>r.date===key);
+    const sg=season==="Winter"?suggestCourse(d):{long:dl.long,longShort:0};
     t={id:"t"+Date.now(),date:key,season,start:startTimeFor(d),timekeeper:duty?duty.who:"",
-       buoyShort:false,startedAt:null,lapsLong:dl.long,lapsShort:dl.short};
+       buoyShort:false,startedAt:null,lapsLong:sg.long,longShortLaps:sg.longShort,lapsShort:dl.short};
     S.trials.push(t);save();}
   S.capSel=t.id;return t;
 }
 function currentTrial(){const id=(S.capSel)||($("#capTrial")&&$("#capTrial").value);return S.trials.find(t=>t.id===id);}
 function boatSize(b){const n=parseInt((b||"K1").slice(1),10);return n>=1&&n<=3?n:1;} // K2->2, S3->3
 function entryName(e){return (e.memberIds||[]).map(memberName).join(" & ")||"—";}
-function lapTarget(t,course){return course==="short"?(t.lapsShort||2):(t.lapsLong||2);}
+function lapTarget(t,course){return course==="short"?(t.lapsShort||2):((t.lapsLong||2)+(t.longShortLaps||0));} // long course = long laps + appended short laps
 function entryTotal(e){return (e.total!=null)?e.total:(e.splits&&e.splits.length?e.splits[e.splits.length-1]:null);}
 function entryDone(e,t){return e.done===true || (e.splits?e.splits.length:0)>=lapTarget(t,e.course);} // imported results set total+done
 function raceElapsed(t){return t&&t.startedAt?(Date.now()-t.startedAt)/1000:0;}
-function lapKm(course){return course==="short"?(+S.settings.shortLapKm||1.4):(+S.settings.longLapKm||2.3);}
-function entryKm(e){return lapKm(e.course)*((e.splits&&e.splits.length)||lapTarget(currentTrial()||{},e.course));}
+function longKmVal(){return +S.settings.longLapKm||2.3;}
+function shortKmVal(){return +S.settings.shortLapKm||1.4;}
+function lapKm(course){return course==="short"?shortKmVal():longKmVal();}
+function trialOf(e){return S.trials.find(t=>t.id===e.trialId);}
+function courseKm(t,course){if(!t)return 0;
+  return course==="short"?((t.lapsShort||0)*shortKmVal()):((t.lapsLong||0)*longKmVal()+(t.longShortLaps||0)*shortKmVal());}
+function entryKm(e){return courseKm(trialOf(e),e.course);}
 function entrySpeed(e){const tot=entryTotal(e);return tot?entryKm(e)/(tot/3600):null;} // km/h
+/* sunset-based suggestion for the long course (each ~10 min later sunset adds a lap) */
+function suggestCourse(date){
+  const ss=SUNSET[date.getMonth()];const m=parseInt(ss.split(":")[0],10)*60+parseInt(ss.split(":")[1],10);
+  let s;
+  if(m>=17*60+53) s={long:3,longShort:1};
+  else if(m>=17*60+43) s={long:3,longShort:0};
+  else if(m>=17*60+33) s={long:2,longShort:1};
+  else s={long:2,longShort:0};
+  s.sunset=ss;return s;
+}
+function courseLabel(longN,shortN){return longN+" long"+(shortN?" + "+shortN+" short":"")+" lap"+(longN+shortN>1?"s":"");}
 function fmtSpeed(s){return s==null?"":s.toFixed(1)+" km/h";}
 // a member's best total on a course strictly before a date (for improvement tracking)
 function priorBest(memberId,course,beforeDate){let best=null;
@@ -778,7 +800,14 @@ function renderCapture(){
   const t=currentTrial();
   $("#capTrialInfo").textContent=`${t.season} · start ${t.start} · timekeeper ${t.timekeeper||"—"}`;
   $("#capBoat").innerHTML=BOATS.map(b=>`<option>${b}</option>`).join("");
-  $("#lapsLong").value=t.lapsLong||2; $("#lapsShort").value=t.lapsShort||2;
+  $("#lapsLong").value=t.lapsLong||2; $("#lapsShort").value=t.lapsShort||3; $("#longShortLaps").value=t.longShortLaps||0;
+  // sunset suggestion for the long course
+  const sg=suggestCourse(new Date(t.date+"T12:00:00"));
+  const lk=courseKm(t,"long");
+  $("#lapSuggest").innerHTML=`<span class="muted">Long course now: <b>${courseLabel(t.lapsLong||2,t.longShortLaps||0)}</b> (${lk.toFixed(1)} km). `
+    +`Sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b>.</span>`
+    +((sg.long!==(t.lapsLong||2)||sg.longShort!==(t.longShortLaps||0))?` <button class="sm sec" id="lapApply" style="padding:4px 8px">Use suggestion</button>`:"");
+  if($("#lapApply"))$("#lapApply").onclick=()=>{t.lapsLong=sg.long;t.longShortLaps=sg.longShort;save();renderCapture();toast("Long course set to "+courseLabel(sg.long,sg.longShort));};
   // suggestion banner
   const mine=S.entries.filter(e=>e.trialId===t.id);
   const prior=priorTrialWithEntries(t);
@@ -900,8 +929,9 @@ $("#btnRace").addEventListener("click",()=>{
   if(!t.startedAt){t.startedAt=Date.now();save();renderCapture();toast("Race started 🏁");}
   else if(confirm("Reset the race clock? Lap times already recorded are kept.")){t.startedAt=null;save();renderCapture();}
 });
-$("#lapsLong").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsLong=Math.max(1,+e.target.value||2);save();renderEntrants();}});
-$("#lapsShort").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsShort=Math.max(1,+e.target.value||2);save();renderEntrants();}});
+$("#lapsLong").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsLong=Math.max(1,+e.target.value||2);save();renderCapture();}});
+$("#lapsShort").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsShort=Math.max(1,+e.target.value||2);save();renderCapture();}});
+$("#longShortLaps").addEventListener("change",e=>{const t=currentTrial();if(t){t.longShortLaps=Math.max(0,+e.target.value||0);save();renderCapture();}});
 $("#capBoat").addEventListener("change",rebuildPaddlerSelects);
 $("#capAdd").addEventListener("click",()=>{
   const t=currentTrial();if(!t){toast("Start a race first");return;}
@@ -920,7 +950,7 @@ function buildResults(t){
     const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
       .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
     if(!g.length)return;
-    const km=lapKm(course)*lapTarget(t,course);
+    const km=courseKm(t,course);
     lines.push("\n*"+(course==="short"?"SHORT COURSE":"LONG COURSE")+(km?` (${km.toFixed(1)} km)`:"")+"*");
     g.forEach((x,i)=>{const sp=entrySpeed(x.e),imp=entryImproved(x.e);
       lines.push(`${i+1}. ${entryName(x.e)} (${x.e.boat}) — ${fmtClock(x.total)}${sp?" · "+sp.toFixed(1)+"km/h":""}${imp?" ⬆PB":""}`);});
