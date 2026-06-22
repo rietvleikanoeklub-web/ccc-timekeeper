@@ -90,7 +90,10 @@ function doPost(e) {
     catch (err) { return json({ error: String(err) }); }
   }
 
-  var data = body.data || {};
+  // SAFETY: only the document-save path writes. An unknown action (or any POST without a full
+  // `data` payload) must NEVER fall through and overwrite the document with an empty object.
+  if (!body.data || !body.data.members) return json({ error: 'no data / unknown action: ' + (body.action || '') });
+  var data = body.data;
   data.updatedAt = data.updatedAt || Date.now();
   writeFile(DATA_FILE, JSON.stringify(data));
   maybeDailyBackup(data);

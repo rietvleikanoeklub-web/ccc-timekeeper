@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.14.0 Standings can filter by course (All / Long only / Short only) so long- and short-course
+          paddlers are ranked separately. (Backend: doPost hardened — unknown actions can never
+          overwrite the document. Member birthdays populated from SA ID numbers.)
    0.13.0 Service worker now versions its cache + auto-reloads on a new release (no more stuck versions).
           Tonight's winter note shows both distances (long 4.6 / short 4.2 km) from settings.
    0.12.0 Capture: ✕ remove/withdraw a boat (active or finished); race clock auto-stops when every
@@ -302,6 +305,7 @@
         <h2 style="margin:0" id="standTitle"></h2>
         <select id="standClass" style="width:auto;padding:6px 8px"></select>
       </div>
+      <div class="tabs" id="standCourseTabs" style="margin-bottom:10px"></div>
       <div id="standTable"></div>
       <div class="row wrap" style="margin-top:12px">
         <button class="sec grow" id="standXlsx">⬇️ Download Excel</button>
@@ -386,7 +390,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.13.0";
+const APP_VERSION = "0.14.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -935,15 +939,16 @@ function startClock(){stopClock();_clock=setInterval(()=>{const t=currentTrial()
 function stopClock(){if(_clock){clearInterval(_clock);_clock=null;}}
 
 /* ============================================================= STANDINGS / SCORING */
-let standSeason="Summer", standClass="ALL";
+let standSeason="Summer", standClass="ALL", standCourse="ALL";
 function pointsForPosition(pos){return pos<=9?(11-pos):1;}
-function computeStandings(season,boatFilter){
+function computeStandings(season,boatFilter,courseFilter){
   // Positions are scored WITHIN each course group (long/short) per trial — you can't
   // rank a 5km short-course time against a 10km long-course time.
   const trials=S.trials.filter(t=>t.season===season);
   const tally={}; // memberId -> {pts, best, count, name, courseBest}
   trials.forEach(t=>{
     ["long","short"].forEach(course=>{
+      if(courseFilter&&courseFilter!=="ALL"&&course!==courseFilter)return;
       const group=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
         .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
       group.forEach((g,i)=>{
@@ -973,9 +978,12 @@ function renderStandings(){
   $("#standClass").innerHTML='<option value="ALL">All boats</option>'+BOATS.map(b=>`<option value="${b}">${b} only</option>`).join("");
   $("#standClass").value=standClass;
   $("#standClass").onchange=e=>{standClass=e.target.value;renderStandings();};
-  $("#standTitle").textContent=standSeason+" League";
-  const rows=computeStandings(standSeason,standClass);
-  if(!rows.length){$("#standTable").innerHTML='<div class="empty">No results captured for '+standSeason+' yet.</div>';return;}
+  const courses=[["ALL","All courses"],["long","Long only"],["short","Short only"]];
+  $("#standCourseTabs").innerHTML=courses.map(([v,l])=>`<button class="${v===standCourse?"on":""}" data-c="${v}">${l}</button>`).join("");
+  $$("#standCourseTabs button").forEach(b=>b.onclick=()=>{standCourse=b.dataset.c;renderStandings();});
+  $("#standTitle").textContent=standSeason+" League"+(standCourse==="ALL"?"":" — "+(standCourse==="short"?"Short":"Long"));
+  const rows=computeStandings(standSeason,standClass,standCourse);
+  if(!rows.length){$("#standTable").innerHTML='<div class="empty">No results captured for '+standSeason+(standCourse==="ALL"?"":" "+standCourse)+' yet.</div>';return;}
   $("#standTable").innerHTML=`<table><thead><tr><th>#</th><th>Paddler</th><th class="num">Trials</th><th class="num">Best</th><th class="num">Points</th></tr></thead><tbody>${
     rows.map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td class="num">${r.count}</td><td class="num">${fmtSecs(r.best)}</td><td class="num"><b>${r.pts}</b></td></tr>`).join("")
   }</tbody></table>`;
@@ -983,7 +991,7 @@ function renderStandings(){
 
 /* ============================================================= EXPORT (Excel / CSV) */
 function buildAOAs(season){
-  const stand=computeStandings(season,standClass);
+  const stand=computeStandings(season,standClass,standCourse);
   const standAOA=[["Rank","Paddler","Boats",standClass==="ALL"?"":"Filter:"+standClass,"Trials","Best","Points"].filter(Boolean)];
   // simpler fixed header
   standAOA.length=0; standAOA.push(["Rank","Paddler","Trials","Best time","Points"]);
