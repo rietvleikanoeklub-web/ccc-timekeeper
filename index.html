@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.17.0 Hardcoded the cloud URL as the default → every device auto-connects to the shared data on
+          first open (no manual Settings step). Still overridable in Settings.
    0.16.0 Sunset planner extended to the full progression up to 4 long + 1 short (~10.5 km, the summer
           course) and now applies year-round, not just winter.
    0.15.0 Long course = long laps + appended short laps (e.g. 2 long + 1 short). Sunset-based
@@ -396,7 +398,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.16.0";
+const APP_VERSION = "0.17.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -455,8 +457,10 @@ const COURSES = {
   triples:      {label:"Triple S (paddle + portage)", km:0,  season:"Triple S"}
 };
 
-/* ---------------- cloud config (paste your Apps Script /exec URL in Settings) ---------------- */
-let CLOUD_URL   = localStorage.getItem("ccc_tk_cloud_url")   || ""; // ...script.google.com/macros/s/.../exec
+/* ---------------- cloud config ---------------- */
+// Hardcoded default so every device auto-connects (no manual setup). Overridable in Settings.
+const DEFAULT_CLOUD_URL = "https://script.google.com/macros/s/AKfycbxxcou1HOOavDik0Bmp7etOGdXRW4QZfMoHZMyuDJt-pTFX55le4sG8Wt4gMB9s1qI6wg/exec";
+let CLOUD_URL   = localStorage.getItem("ccc_tk_cloud_url")   || DEFAULT_CLOUD_URL;
 let CLOUD_TOKEN = localStorage.getItem("ccc_tk_cloud_token") || ""; // optional, must match SHARED_TOKEN
 
 /* ---------------- state ---------------- */
