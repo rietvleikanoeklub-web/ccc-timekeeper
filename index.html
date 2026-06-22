@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.16.0 Sunset planner extended to the full progression up to 4 long + 1 short (~10.5 km, the summer
+          course) and now applies year-round, not just winter.
    0.15.0 Long course = long laps + appended short laps (e.g. 2 long + 1 short). Sunset-based
           suggestion (each ~10 min later sunset adds a lap: 2L → 2L+1S → 3L → 3L+1S) on Tonight +
           Capture with "Use suggestion". Fixed avg-speed to use each entry's own trial distance.
@@ -394,7 +396,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.15.0";
+const APP_VERSION = "0.16.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -600,8 +602,8 @@ function renderTonight(){
   $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
 
   let note="";
-  if(season==="Winter"){const sg=suggestCourse(d);const lk=(sg.long*(+S.settings.longLapKm||2.3)+sg.longShort*(+S.settings.shortLapKm||1.4));
-    note=`<div class="warnbox">Winter: sunset ~${sunset}. Suggested long course: <b>${courseLabel(sg.long,sg.longShort)}</b> (~${lk.toFixed(1)} km) — back-markers should be finishing their last lap as the sun sets.</div>`;}
+  {const sg=suggestCourse(d);const lk=(sg.long*(+S.settings.longLapKm||2.3)+sg.longShort*(+S.settings.shortLapKm||1.4));
+    note=`<div class="warnbox">Sunset ~${sunset}. Suggested long course: <b>${courseLabel(sg.long,sg.longShort)}</b> (~${lk.toFixed(1)} km) — back-markers should be finishing their last lap as the sun sets.</div>`;}
   if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
   $("#tnNote").innerHTML=note;
 }
@@ -733,7 +735,7 @@ function ensureTrialForTonight(){
   const d=nextThursday();const key=ymd(d);
   let t=S.trials.find(x=>x.date===key);
   if(!t){const season=seasonFor(d);const dl=defaultLaps(season);const duty=S.roster.find(r=>r.date===key);
-    const sg=season==="Winter"?suggestCourse(d):{long:dl.long,longShort:0};
+    const sg=suggestCourse(d); // sunset-driven, year-round (winter short -> summer 4 long + 1 short)
     t={id:"t"+Date.now(),date:key,season,start:startTimeFor(d),timekeeper:duty?duty.who:"",
        buoyShort:false,startedAt:null,lapsLong:sg.long,longShortLaps:sg.longShort,lapsShort:dl.short};
     S.trials.push(t);save();}
@@ -757,8 +759,10 @@ function entrySpeed(e){const tot=entryTotal(e);return tot?entryKm(e)/(tot/3600):
 /* sunset-based suggestion for the long course (each ~10 min later sunset adds a lap) */
 function suggestCourse(date){
   const ss=SUNSET[date.getMonth()];const m=parseInt(ss.split(":")[0],10)*60+parseInt(ss.split(":")[1],10);
-  let s;
-  if(m>=17*60+53) s={long:3,longShort:1};
+  let s; // each ~10 min later sunset adds a lap; max 4 long + 1 short (~10.5 km, the summer full course)
+  if(m>=18*60+13) s={long:4,longShort:1};
+  else if(m>=18*60+3) s={long:4,longShort:0};
+  else if(m>=17*60+53) s={long:3,longShort:1};
   else if(m>=17*60+43) s={long:3,longShort:0};
   else if(m>=17*60+33) s={long:2,longShort:1};
   else s={long:2,longShort:0};
