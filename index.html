@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.23.0 Edit a boat after adding it: ⚙ button on each boat opens a modal to change boat type
+          (K1↔K2↔K3, adds paddler slots), switch Long/Short, swap/add paddlers, fix lap times, or remove.
    0.22.0 "Clear all boats (reset this race)" button on Capture (admin) — wipes a test race's results
           and resets the clock in one tap.
    0.21.0 Age field now shows the actual derived value (e.g. 28) instead of a faint placeholder; stays
@@ -409,7 +411,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.22.0";
+const APP_VERSION = "0.23.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -929,21 +931,19 @@ function renderEntrants(){
       <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>
         <div class="small muted">${e.course==="short"?"Short":"Long"} · Lap ${n}/${tgt}${n?` · last ${last} · total ${fmtClock(entryTotal(e))}`:""}</div></div>
       ${n?`<button class="undo" data-undo="${e.id}">↩</button>`:""}
-      <button class="undo rm" data-rm="${e.id}">✕</button>
+      <button class="undo" data-editb="${e.id}">⚙</button>
       <button class="lapbtn">Lap</button></div>`;};
   const rowDone=e=>{const sp=entrySpeed(e),imp=entryImproved(e);
     return `<div class="boatrow done">
       <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>${imp?' <span class="pill triples">⬆ PB</span>':""}
         <div class="small muted">${e.course==="short"?"Short":"Long"} · ${e.splits.length} laps${sp&&sp<40?" · "+fmtSpeed(sp):""}</div></div>
       <span class="num">${fmtClock(entryTotal(e))}</span>
-      <button class="undo" data-editsp="${e.id}">✎</button>
-      <button class="undo rm" data-rm="${e.id}">✕</button></div>`;};
+      <button class="undo" data-editb="${e.id}">⚙</button></div>`;};
   const finishedHdr=done.length?`<div class="small muted" style="margin:6px 0">Finished</div>`:"";
   $("#capList").innerHTML=(active.map(rowActive).join("")||(done.length?"":'<div class="empty">No boats yet — add them below, or load last week’s list.</div>'))+finishedHdr+done.map(rowDone).join("");
   $$('#capList .boatrow.active').forEach(r=>r.onclick=()=>recordLap(r.dataset.lap));
   $$('#capList [data-undo]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();undoLap(b.dataset.undo);});
-  $$('#capList [data-rm]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();removeEntry(b.dataset.rm);});
-  $$('#capList [data-editsp]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();editEntry(b.dataset.editsp);});
+  $$('#capList [data-editb]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();editBoat(b.dataset.editb);});
 }
 function recordLap(eid){
   const t=currentTrial();if(!t)return;
@@ -974,20 +974,43 @@ function clearRace(){
   t.startedAt=null;
   save();rebuildPaddlerSelects();renderCapture();toast("Race cleared");
 }
-/* override a mis-tapped time: edit each lap's cumulative time (and the total) */
-function editEntry(eid){
-  const e=S.entries.find(x=>x.id===eid);if(!e)return;
+/* edit a boat: change boat type / course / paddlers, fix lap times, or remove it */
+function editBoat(eid){
+  const t=currentTrial();const e=S.entries.find(x=>x.id===eid);if(!e)return;
+  const padOpts=(selId)=>{
+    const used=new Set(S.entries.filter(x=>x.trialId===t.id&&x.id!==e.id).flatMap(x=>x.memberIds));
+    const rank=paddlerRank();
+    return '<option value="">— paddler —</option>'+S.members.filter(m=>!used.has(m.id)||m.id===selId)
+      .sort((a,b)=>(rank[b.id]||0)-(rank[a.id]||0)||(a.first+a.last).localeCompare(b.first+b.last))
+      .map(m=>`<option value="${m.id}" ${m.id===selId?"selected":""}>${memberLabel(m.id)}</option>`).join("");
+  };
+  const padFields=(boat,crew)=>{const n=boatSize(boat);
+    return Array.from({length:n},(_,i)=>`<label>${n>1?"Paddler "+(i+1):"Paddler"}</label><select class="ebP" data-i="${i}">${padOpts(crew[i]||"")}</select>`).join("");};
   const splits=e.splits&&e.splits.length?e.splits:(e.total!=null?[e.total]:[]);
-  const body=`<p class="small muted">Correct any lap's running time (mm:ss.t). The last one is the total.</p>`
-    +splits.map((s,i)=>`<label>Lap ${i+1}${i===splits.length-1?" (total)":""}</label><input class="capEd" data-i="${i}" value="${fmtClock(s)}" inputmode="decimal">`).join("")
-    +(splits.length?"":"<p class='small muted'>No lap times recorded.</p>");
-  openModal("Edit "+entryName(e),body,()=>{
-    const vals=$$(".capEd").map(inp=>parseTime(inp.value));
-    if(vals.some(v=>v==null)){toast("Bad time — use mm:ss or mm:ss.t");return false;}
-    for(let i=1;i<vals.length;i++){if(vals[i]<vals[i-1]){toast("Each lap time must be later than the previous");return false;}}
-    e.splits=vals; if(e.total!=null)e.total=vals[vals.length-1]; e.lastTap=Date.now();
-    save();renderCapture();toast("Time updated");
+  const timeFields=splits.length?`<label class="muted" style="margin-top:8px">Lap times (mm:ss.t — last is the total)</label>`
+    +splits.map((s,i)=>`<input class="ebT" data-i="${i}" value="${fmtClock(s)}" inputmode="decimal" style="margin-bottom:6px">`).join(""):"";
+  const body=`<div class="row wrap">
+      <div style="width:110px"><label>Boat</label><select id="ebBoat">${BOATS.map(b=>`<option ${b===e.boat?"selected":""}>${b}</option>`).join("")}</select></div>
+      <div class="grow"><label>Course</label><select id="ebCourse"><option value="long" ${e.course==="long"?"selected":""}>Long</option><option value="short" ${e.course==="short"?"selected":""}>Short</option></select></div>
+    </div>
+    <div id="ebPaddlers">${padFields(e.boat,e.memberIds)}</div>
+    ${timeFields}
+    <button class="ghost danger" id="ebRemove" style="width:100%;margin-top:12px">Remove this boat</button>`;
+  openModal("Edit boat",body,()=>{
+    const boat=$("#ebBoat").value, course=$("#ebCourse").value, ids=$$(".ebP").map(s=>s.value);
+    if(ids.some(x=>!x)){toast("Pick all "+boatSize(boat)+" paddler(s)");return false;}
+    if(new Set(ids).size!==ids.length){toast("Same paddler twice");return false;}
+    if($$(".ebT").length){const vals=$$(".ebT").map(i=>parseTime(i.value));
+      if(vals.some(v=>v==null)){toast("Bad time — use mm:ss or mm:ss.t");return false;}
+      for(let i=1;i<vals.length;i++)if(vals[i]<vals[i-1]){toast("Lap times out of order");return false;}
+      e.splits=vals; if(e.total!=null)e.total=vals[vals.length-1];}
+    e.boat=boat; e.course=course; e.memberIds=ids; e.lastTap=Date.now();
+    ids.forEach(id=>{const m=S.members.find(x=>x.id===id);if(m)m.boat=boat;});
+    save();rebuildPaddlerSelects();renderCapture();toast("Boat updated");
   },"Save");
+  // changing boat type adds/removes paddler slots
+  $("#ebBoat").onchange=()=>{const cur=$$(".ebP").map(s=>s.value);$("#ebPaddlers").innerHTML=padFields($("#ebBoat").value,cur);};
+  const rm=$("#ebRemove");if(rm)rm.onclick=()=>{if(confirm("Remove "+entryName(e)+"?")){S.entries=S.entries.filter(x=>x.id!==e.id);save();rebuildPaddlerSelects();closeModal();renderCapture();}};
 }
 $("#capTrial").addEventListener("change",e=>{S.capSel=e.target.value;save();renderCapture();});
 $("#btnRace").addEventListener("click",()=>{
