@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.27.0 🏆 Club records board on Standings (fastest long/short course by avg speed — fair across
+          changing lap counts — per boat class + women's records; fastest single long/short lap).
+          Member card gains lap fade (lap 2 vs lap 1 avg) and longest-streak stats.
    0.26.0 Member stats (read-only, no sync changes): tap any member (Members list or Standings row)
           for TT count, league position, per-course PBs + avg/best speed, wins, best/avg LONG and
           SHORT lap (from timed races), PB count, and recent results with positions.
@@ -350,6 +353,7 @@
         </div>
       </details>
     </div>
+    <div class="card" id="recordsCard"></div>
   </section>
 
   <!-- ===================== MEMBERS ===================== -->
@@ -420,7 +424,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.26.0";
+const APP_VERSION = "0.27.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -811,7 +815,8 @@ function trialOf(e){return S.trials.find(t=>t.id===e.trialId);}
 function courseKm(t,course){if(!t)return 0;
   return course==="short"?((t.lapsShort||0)*shortKmVal()):((t.lapsLong||0)*longKmVal()+(t.longShortLaps||0)*shortKmVal());}
 function entryKm(e){return courseKm(trialOf(e),e.course);}
-function entrySpeed(e){const tot=entryTotal(e);return tot?entryKm(e)/(tot/3600):null;} // km/h
+function entrySpeed(e){if(e.noSpeed)return null; // non-standard distance that night — speed not comparable
+  const tot=entryTotal(e);const sp=tot?entryKm(e)/(tot/3600):null;return (sp&&sp<40)?sp:null;} // km/h
 /* sunset-based suggestion for the long course (each ~10 min later sunset adds a lap) */
 function suggestCourse(date){
   const ss=SUNSET[date.getMonth()];const m=parseInt(ss.split(":")[0],10)*60+parseInt(ss.split(":")[1],10);
@@ -1134,11 +1139,12 @@ function renderStandings(){
   $$("#standCourseTabs button").forEach(b=>b.onclick=()=>{standCourse=b.dataset.c;renderStandings();});
   $("#standTitle").textContent=standSeason+" League"+(standCourse==="ALL"?"":" — "+(standCourse==="short"?"Short":"Long"));
   const rows=computeStandings(standSeason,standClass,standCourse);
-  if(!rows.length){$("#standTable").innerHTML='<div class="empty">No results captured for '+standSeason+(standCourse==="ALL"?"":" "+standCourse)+' yet.</div>';return;}
+  if(!rows.length){$("#standTable").innerHTML='<div class="empty">No results captured for '+standSeason+(standCourse==="ALL"?"":" "+standCourse)+' yet.</div>';renderRecords();return;}
   $("#standTable").innerHTML=`<table><thead><tr><th>#</th><th>Paddler</th><th class="num">Trials</th><th class="num">Best</th><th class="num">Points</th></tr></thead><tbody>${
     rows.map((r,i)=>`<tr data-mid="${r.id}" style="cursor:pointer"><td>${i+1}</td><td>${r.name}</td><td class="num">${r.count}</td><td class="num">${fmtSecs(r.best)}</td><td class="num"><b>${r.pts}</b></td></tr>`).join("")
   }</tbody></table><div class="small muted" style="margin-top:6px">Tap a paddler for their stats.</div>`;
   $$("#standTable tr[data-mid]").forEach(tr=>tr.onclick=()=>showMemberStats(tr.dataset.mid));
+  renderRecords();
 }
 
 /* ============================================================= EXPORT (Excel / CSV) */
@@ -1294,7 +1300,7 @@ function memberStats(mid){
     if(!(e.memberIds||[]).includes(mid))return;
     const t=trialOf(e);if(!t||!entryDone(e,t))return;
     const tot=entryTotal(e);if(tot==null)return;
-    const km=entryKm(e),sp=(km&&tot)?km/(tot/3600):null;
+    const sp=entrySpeed(e);
     const grp=S.entries.filter(x=>x.trialId===t.id&&x.course===e.course&&entryDone(x,t))
       .sort((a,b)=>entryTotal(a)-entryTotal(b));
     st.results.push({date:t.date,course:e.course,boat:e.boat,total:tot,speed:sp,
@@ -1309,10 +1315,72 @@ function memberStats(mid){
       e.splits.forEach((s,i)=>{const dur=i?s-e.splits[i-1]:s;
         const kind=e.course==="short"?"short":(i<(t.lapsLong||2)?"long":"short");
         const L=st.lap[kind];L.sum+=dur;L.n++;if(L.best==null||dur<L.best)L.best=dur;});
+      // fade: lap 2 vs lap 1 of the same kind (consistency)
+      const l1=e.splits[0], l2=e.splits[1]-e.splits[0];
+      const sameKind=e.course==="short"||((t.lapsLong||2)>=2);
+      if(sameKind){st.fadeSum=(st.fadeSum||0)+(l2-l1);st.fadeN=(st.fadeN||0)+1;}
     }
   });
   st.results.sort((a,b)=>b.date.localeCompare(a.date));
+  // longest streak of consecutive club trial nights participated
+  const nights=[...new Set(S.trials.filter(t=>S.entries.some(e=>e.trialId===t.id&&entryDone(e,t))).map(t=>t.date))].sort();
+  let cur=0;st.streak=0;
+  nights.forEach(d=>{
+    const raced=S.entries.some(e=>{const t=trialOf(e);return t&&t.date===d&&(e.memberIds||[]).includes(mid)&&entryDone(e,t);});
+    cur=raced?cur+1:0;if(cur>st.streak)st.streak=cur;
+  });
   return st;
+}
+/* club records — course records ranked by avg SPEED (fair across changing lap counts),
+   lap records by time (lap distances are fixed) */
+function clubRecords(){
+  const out={course:{long:{},short:{}},lap:{long:null,short:null}};
+  const better=(cur,cand,hiGood)=>cur==null||(hiGood?cand.val>cur.val:cand.val<cur.val);
+  S.entries.forEach(e=>{
+    const t=trialOf(e);if(!t||!entryDone(e,t))return;
+    const tot=entryTotal(e);if(tot==null)return;
+    const sp=entrySpeed(e);
+    const crew=(e.memberIds||[]).map(id=>S.members.find(m=>m.id===id)).filter(Boolean);
+    if(!crew.length)return;
+    const allF=crew.every(m=>m.sex==="F");
+    const name=crew.map(memberFull).join(" & ");
+    if(sp){
+      const rec={val:sp,name,boat:e.boat,date:t.date,time:tot};
+      const C=out.course[e.course];
+      if(better(C.overall,rec,true))C.overall=rec;
+      if(better(C[e.boat],rec,true))C[e.boat]=rec;
+      if(allF&&better(C.women,rec,true))C.women=rec;
+    }
+    if(e.splits&&e.splits.length>1){
+      e.splits.forEach((s,i)=>{const dur=i?s-e.splits[i-1]:s;
+        const kind=e.course==="short"?"short":(i<(t.lapsLong||2)?"long":"short");
+        const lr={val:dur,name,boat:e.boat,date:t.date};
+        if(better(out.lap[kind],lr,false))out.lap[kind]=lr;});
+    }
+  });
+  return out;
+}
+function renderRecords(){
+  const el=$("#recordsCard");if(!el)return;
+  const r=clubRecords();
+  const line=(label,rec,isLap)=>rec?`<div class="kv"><span class="k">${label}</span><span class="v">${isLap?fmtClock(rec.val):rec.val.toFixed(1)+" km/h"}<div class="small muted">${rec.name} (${rec.boat}${isLap?"":", "+fmtClock(rec.time)}) · ${fmtDate(rec.date)}</div></span></div>`:"";
+  let h="<h2>🏆 Club records</h2>";
+  let any=false;
+  [["long","LONG COURSE"],["short","SHORT COURSE"]].forEach(([c,lab])=>{
+    const C=r.course[c];if(!C.overall)return;any=true;
+    h+=`<div class="small" style="margin-top:8px;font-weight:800;color:var(--muted)">${lab}</div>`;
+    h+=line("Fastest",C.overall);
+    BOATS.forEach(b=>{if(C[b]&&C[b]!==C.overall)h+=line(b,C[b]);});
+    if(C.women&&C.women!==C.overall)h+=line("Women",C.women);
+  });
+  if(r.lap.long||r.lap.short){any=true;
+    h+=`<div class="small" style="margin-top:8px;font-weight:800;color:var(--muted)">FASTEST SINGLE LAP</div>`;
+    if(r.lap.long)h+=line("Long lap",r.lap.long,true);
+    if(r.lap.short)h+=line("Short lap",r.lap.short,true);
+  }
+  h+=`<div class="small muted" style="margin-top:6px">Course records rank by average speed, so nights with different lap counts compare fairly.</div>`;
+  el.innerHTML=any?h:"";
+  el.style.display=any?"":"none";
 }
 function showMemberStats(mid){
   const m=S.members.find(x=>x.id===mid);if(!m)return;
@@ -1323,6 +1391,9 @@ function showMemberStats(mid){
   else{
     body+=row("Time trials",st.total+(st.firstDate?` <span class="muted small">(since ${fmtDate(st.firstDate)})</span>`:""));
     if(st.pbCount)body+=row("Personal bests set","⬆ "+st.pbCount);
+    if(st.streak>1)body+=row("Longest streak",st.streak+" Thursdays in a row");
+    if(st.fadeN){const f=st.fadeSum/st.fadeN;
+      body+=row("Lap fade",(f>=0?"+":"−")+Math.abs(f).toFixed(0)+"s <span class='muted small'>lap 2 vs lap 1 avg</span>");}
     const season=seasonFor(new Date());
     const lg=computeStandings(season,"ALL","ALL");const i=lg.findIndex(r=>r.id===mid);
     if(i>=0)body+=row(season+" league","#"+(i+1)+" · "+lg[i].pts+" pts");
