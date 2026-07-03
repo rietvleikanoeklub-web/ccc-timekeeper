@@ -28,6 +28,10 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.28.0 Mixed K2 League (August): new Standings tab — K2 crews of one man + one woman score as
+          TEAMS, ranked among mixed crews only (revives the club's historical Mixed-K2 League).
+          August banners on Tonight + in the announcement. Header homage: "In honour of
+          👨‍🏫 Prof WA Landman — father of the CCC time trials".
    0.27.0 🏆 Club records board on Standings (fastest long/short course by avg speed — fair across
           changing lap counts — per boat class + women's records; fastest single long/short lap).
           Member card gains lap fade (lap 2 vs lap 1 avg) and longest-streak stats.
@@ -106,8 +110,8 @@
     -webkit-text-size-adjust:100%}
   body{padding-bottom:84px}
   header{position:sticky;top:0;z-index:20;background:var(--green);color:#fff;
-    padding:calc(env(safe-area-inset-top,0px) + 12px) var(--pad) 12px;
-    display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+    padding:calc(env(safe-area-inset-top,0px) + 10px) var(--pad) 8px;
+    display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
   header .logo{font-weight:800;font-size:18px;letter-spacing:.3px}
   header .ver{margin-left:auto;font-size:11px;opacity:.8}
   main{padding:var(--pad);max-width:760px;margin:0 auto}
@@ -203,8 +207,11 @@
 </head>
 <body>
 <header>
-  <span class="logo">🛶 CCC Timekeeper</span>
-  <span class="ver" id="verTag"></span>
+  <div style="display:flex;align-items:center;gap:10px;width:100%">
+    <span class="logo">🛶 CCC Timekeeper</span>
+    <span class="ver" id="verTag"></span>
+  </div>
+  <div style="width:100%;font-size:11px;opacity:.78;margin-top:1px">In honour of 👨‍🏫 Prof WA Landman — father of the CCC time trials</div>
 </header>
 
 <main>
@@ -424,7 +431,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.27.0";
+const APP_VERSION = "0.28.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -657,6 +664,7 @@ function renderTonight(){
   let note="";
   {const sg=suggestCourse(d);const lk=(sg.long*(+S.settings.longLapKm||2.3)+sg.longShort*(+S.settings.shortLapKm||1.4));
     note=`<div class="warnbox">Sunset ~${sunset}. Suggested long course: <b>${courseLabel(sg.long,sg.longShort)}</b> (~${lk.toFixed(1)} km) — back-markers should be finishing their last lap as the sun sets.</div>`;}
+  if(d.getMonth()===7) note+=`<div class="hintbox">🚻 <b>August is Mixed K2 month!</b> Pair up — one man + one woman in a K2 scores in the Mixed League (own trophy, own bragging rights).</div>`;
   if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
   $("#tnNote").innerHTML=note;
 }
@@ -673,7 +681,7 @@ $("#btnAnnounce").addEventListener("click",()=>{
 ⏰ Start: *${start}*
 📏 Tonight: *${c.label}*
 🧑‍⚖️ Timekeeper: *${duty?duty.who:"NOT ASSIGNED — please volunteer"}*
-🌅 Sunset ~${SUNSET[d.getMonth()]} — life jackets compulsory.${notes?"\n📝 "+notes:""}
+🌅 Sunset ~${SUNSET[d.getMonth()]} — life jackets compulsory.${notes?"\n📝 "+notes:""}${d.getMonth()===7?"\n🚻 *August = Mixed K2 month!* One man + one woman per K2 — own league, own trophy. Grab a partner!":""}
 📲 App: https://tinyurl.com/2b9qc7qg
 
 See you on the water!`;
@@ -1127,16 +1135,55 @@ function computeStandings(season,boatFilter,courseFilter){
   return Object.entries(tally).map(([id,e])=>({id,...e}))
     .sort((a,b)=>b.pts-a.pts || (a.best||9e9)-(b.best||9e9));
 }
+/* Mixed K2 league (August): K2 crews of one man + one woman, scored as TEAMS,
+   ranked among mixed crews only — reviving the club's historical Mixed-K2 League */
+function isMixedK2(e){
+  if(e.boat!=="K2"||!e.memberIds||e.memberIds.length!==2)return false;
+  const sx=e.memberIds.map(id=>{const m=S.members.find(x=>x.id===id);return m&&m.sex;});
+  return sx.includes("M")&&sx.includes("F");
+}
+function computeMixedStandings(courseFilter){
+  const teams={};
+  S.trials.forEach(t=>{
+    if(t.date.slice(5,7)!=="08")return; // August league
+    ["long","short"].forEach(course=>{
+      if(courseFilter&&courseFilter!=="ALL"&&course!==courseFilter)return;
+      const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t)&&isMixedK2(e))
+        .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
+      g.forEach((x,i)=>{ // rank among MIXED crews only (5th K2 overall can still be 1st mixed)
+        const key=[...x.e.memberIds].sort().join("|");
+        const tm=teams[key]=teams[key]||{pts:0,n:0,best:null,name:x.e.memberIds.map(memberName).join(" & "),ids:x.e.memberIds};
+        tm.pts+=pointsForPosition(i+1);tm.n++;
+        if(tm.best==null||x.total<tm.best)tm.best=x.total;
+      });
+    });
+  });
+  return Object.values(teams).sort((a,b)=>b.pts-a.pts||(a.best||9e9)-(b.best||9e9));
+}
 function renderStandings(){
-  const seasons=["Summer","Winter","Triple S"];
+  const seasons=["Summer","Winter","Triple S","Mixed K2"];
   $("#standTabs").innerHTML=seasons.map(s=>`<button class="${s===standSeason?"on":""}" data-s="${s}">${s}</button>`).join("");
   $$("#standTabs button").forEach(b=>b.onclick=()=>{standSeason=b.dataset.s;renderStandings();});
+  const mixed=standSeason==="Mixed K2";
+  $("#standClass").style.display=mixed?"none":"";
   $("#standClass").innerHTML='<option value="ALL">All boats</option>'+BOATS.map(b=>`<option value="${b}">${b} only</option>`).join("");
   $("#standClass").value=standClass;
   $("#standClass").onchange=e=>{standClass=e.target.value;renderStandings();};
   const courses=[["ALL","All courses"],["long","Long only"],["short","Short only"]];
   $("#standCourseTabs").innerHTML=courses.map(([v,l])=>`<button class="${v===standCourse?"on":""}" data-c="${v}">${l}</button>`).join("");
   $$("#standCourseTabs button").forEach(b=>b.onclick=()=>{standCourse=b.dataset.c;renderStandings();});
+  if(mixed){
+    $("#standTitle").textContent="Mixed K2 League — August";
+    const teams=computeMixedStandings(standCourse);
+    if(!teams.length){
+      $("#standTable").innerHTML='<div class="empty">No mixed-K2 results yet.<br><br>🚻 <b>August is Mixed month:</b> a K2 with one man + one woman scores in its own league — grab a partner!</div>';
+      renderRecords();return;
+    }
+    $("#standTable").innerHTML=`<table><thead><tr><th>#</th><th>Team</th><th class="num">Races</th><th class="num">Best</th><th class="num">Points</th></tr></thead><tbody>${
+      teams.map((tm,i)=>`<tr><td>${i===0?"🏆":i+1}</td><td>${tm.name}</td><td class="num">${tm.n}</td><td class="num">${fmtSecs(tm.best)}</td><td class="num"><b>${tm.pts}</b></td></tr>`).join("")
+    }</tbody></table><div class="small muted" style="margin-top:6px">Teams score by finishing position among mixed K2s only.</div>`;
+    renderRecords();return;
+  }
   $("#standTitle").textContent=standSeason+" League"+(standCourse==="ALL"?"":" — "+(standCourse==="short"?"Short":"Long"));
   const rows=computeStandings(standSeason,standClass,standCourse);
   if(!rows.length){$("#standTable").innerHTML='<div class="empty">No results captured for '+standSeason+(standCourse==="ALL"?"":" "+standCourse)+' yet.</div>';renderRecords();return;}
