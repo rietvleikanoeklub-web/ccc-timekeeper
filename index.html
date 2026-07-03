@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.25.0 App link (tinyurl.com/2b9qc7qg) added to the WhatsApp announcement; backend emails
+          (Mon/Thu reminders, swap duty email) and calendar events now link the app too.
    0.24.0 Paddler picker: 🔍 search box + "usual" paddlers (TT in last 8 weeks) listed first, then A–Z.
           Swap-out now emails the new timekeeper immediately (backend action=dutyEmail). Backend
           reminder dedupe is per-person so a swapped-in keeper still gets reminded. SW cache re-versioned.
@@ -415,7 +417,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.24.0";
+const APP_VERSION = "0.25.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -664,6 +666,7 @@ $("#btnAnnounce").addEventListener("click",()=>{
 📏 Tonight: *${c.label}*
 🧑‍⚖️ Timekeeper: *${duty?duty.who:"NOT ASSIGNED — please volunteer"}*
 🌅 Sunset ~${SUNSET[d.getMonth()]} — life jackets compulsory.${notes?"\n📝 "+notes:""}
+📲 App: https://tinyurl.com/2b9qc7qg
 
 See you on the water!`;
   shareModal("Announce to timekeepers",msg,"timekeepers");

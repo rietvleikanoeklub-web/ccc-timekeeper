@@ -53,6 +53,8 @@ var SHARED_TOKEN  = '';   // '' = open. Otherwise must match CLOUD_TOKEN in inde
 var ADMIN_CC      = 'elton@edp.co.za';  // CC'd on reminders + recipient of emailed results
 var RESULTS_TO    = 'elton@edp.co.za';  // who receives the Excel results email
 var CAL_ID        = 'primary';          // club calendar to publish duties to (runs as the club account)
+var APP_URL       = 'https://rietvleikanoeklub-web.github.io/ccc-timekeeper/';  // linked in every email
+var APP_URL_SHORT = 'https://tinyurl.com/2b9qc7qg';                              // same app, short form
 
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'data';
@@ -101,7 +103,8 @@ function doPost(e) {
         body: 'Hi ' + (mem.first || body.who) + ',\n\n'
           + 'The roster was updated: you are now the TIMEKEEPER for the CCC time trial on '
           + fmtDateZA(dd) + ' (start ' + startTimeForDate(dd) + ').\n\n'
-          + 'Please be at the dam 10 minutes early with a stopwatch.\n\nThanks!\nCCC Timekeeper' });
+          + 'Please be at the dam 10 minutes early with a stopwatch.\n\n'
+          + 'Record the times on the Timekeeper app: ' + APP_URL + '\n(short link: ' + APP_URL_SHORT + ')\n\nThanks!\nCCC Timekeeper' });
       return json({ ok: true, to: mem.email });
     } catch (err) { return json({ error: String(err) }); }
   }
@@ -183,6 +186,7 @@ function sendReminders() {
       body: 'Hi ' + (m.first || r.who) + ',\n\n' + intro + '\n\n'
         + 'Please be at the dam 10 minutes early with a stopwatch.\n'
         + (phase === 'mon' ? 'If you cannot make it, arrange a swap NOW — a timekeeper who paddles makes the trial unofficial (no points earned).\n' : '')
+        + '\nRecord the times on the Timekeeper app: ' + APP_URL + '\n(short link: ' + APP_URL_SHORT + ')\n'
         + '\nThanks for keeping time!\nCCC Timekeeper'
     });
     props.setProperty(key, new Date().toISOString());
@@ -215,7 +219,8 @@ function publishSchedule() {
     var m = findMember(members, r.who);
     var ev = cal.createEvent('🛶 Timekeeping: ' + r.who, s, en, {
       description: r.who + ' is on timekeeping duty for the CCC Thursday time trial (start ' + start + ').\n'
-        + 'Be at the dam 10 min early with a stopwatch. Arrange a swap in advance if needed.',
+        + 'Be at the dam 10 min early with a stopwatch. Arrange a swap in advance if needed.\n'
+        + 'Record the times on the Timekeeper app: ' + APP_URL,
       location: 'Rietvlei Dam',
       guests: (m && m.email) ? m.email : '',
       sendInvites: true
