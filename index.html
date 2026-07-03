@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.24.0 Paddler picker: 🔍 search box + "usual" paddlers (TT in last 8 weeks) listed first, then A–Z.
+          Swap-out now emails the new timekeeper immediately (backend action=dutyEmail). Backend
+          reminder dedupe is per-person so a swapped-in keeper still gets reminded. SW cache re-versioned.
    0.23.0 Edit a boat after adding it: ⚙ button on each boat opens a modal to change boat type
           (K1↔K2↔K3, adds paddler slots), switch Long/Short, swap/add paddlers, fix lap times, or remove.
    0.22.0 "Clear all boats (reset this race)" button on Capture (admin) — wipes a test race's results
@@ -311,6 +314,7 @@
           <div style="width:120px"><label>Boat</label><select id="capBoat"></select></div>
           <div class="grow"><label>Course</label><select id="capCourse"><option value="long">Long</option><option value="short">Short</option></select></div>
         </div>
+        <input id="capPadSearch" placeholder="🔍 search paddler…" style="margin-top:8px">
         <div id="capPaddlers"></div>
         <button id="capAdd" style="margin-top:12px;width:100%">Add boat to race</button>
       </div>
@@ -411,7 +415,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.23.0";
+const APP_VERSION = "0.24.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -706,6 +710,12 @@ function requestSwap(date){
   openModal("Swap timekeeper — "+fmtDate(date),body,()=>{
     const m=S.members.find(x=>x.id===$("#swapWho").value);if(!m)return;
     r.who=memberFull(m);r.reminded=false;save();renderRoster();renderTonight();remind(date);toast("Reassigned to "+r.who);
+    if(CLOUD_URL){ // also email the new timekeeper straight away
+      fetch(CLOUD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},
+        body:JSON.stringify({token:CLOUD_TOKEN,action:"dutyEmail",date:r.date,who:r.who})})
+        .then(x=>x.json()).then(res=>toast(res&&res.ok?("Duty email sent to "+r.who):("No email sent: "+((res&&res.error)||"?"))))
+        .catch(()=>{});
+    }
   },"Reassign");
   const ask=$("#swapAsk");if(ask)ask.onclick=()=>{closeModal();
     shareModal("Swap request",`🔁 *Timekeeping swap needed* — ${r.who} can't keep time on *${fmtDate(date)}* (start ${startTimeFor(new Date(date+"T12:00:00"))}). Can anyone take over? Reply here. 🙏`,"timekeepers");};
@@ -905,16 +915,28 @@ function addCombo(c){
   S.entries.push({id:"e"+Date.now().toString(36),trialId:t.id,memberIds:[...c.memberIds],boat:c.boat,course:c.course||"long",splits:[],lastTap:0});
   save();renderCapture();toast("Added "+c.memberIds.map(memberName).join(" & "));
 }
+/* how many TTs each paddler has done in the last N weeks — the "usual" crowd */
+function recentRank(weeks){
+  const cut=ymd(new Date(Date.now()-(weeks||8)*7*86400000));
+  const ids={};
+  S.entries.forEach(e=>{const tr=S.trials.find(t=>t.id===e.trialId);
+    if(tr&&tr.date>=cut)(e.memberIds||[]).forEach(id=>ids[id]=(ids[id]||0)+1);});
+  return ids;
+}
 function rebuildPaddlerSelects(){
   const t=currentTrial();if(!t)return;
   const n=boatSize($("#capBoat").value);
+  const keep=$$(".capP").map(s=>s.value); // preserve selections across rebuilds
+  const q=(($("#capPadSearch")&&$("#capPadSearch").value)||"").trim().toLowerCase();
   const used=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
-  const rank=paddlerRank();
-  const opts='<option value="">— paddler —</option>'+S.members.filter(m=>!used.has(m.id))
-    .sort((a,b)=>(rank[b.id]||0)-(rank[a.id]||0)||(a.first+a.last).localeCompare(b.first+b.last)) // regulars first
-    .map(m=>`<option value="${m.id}">${memberLabel(m.id)}</option>`).join("");
+  const rec=recentRank(8);
+  const sorted=S.members.filter(m=>!used.has(m.id))
+    .sort((a,b)=>(rec[b.id]||0)-(rec[a.id]||0)||memberFull(a).localeCompare(memberFull(b))); // recent TT paddlers first, then A–Z
+  const match=m=>!q||(memberFull(m)+" "+(m.alias||"")).toLowerCase().includes(q);
+  const opts=sel=>'<option value="">— paddler —</option>'+sorted.filter(m=>match(m)||m.id===sel)
+    .map(m=>`<option value="${m.id}" ${m.id===sel?"selected":""}>${memberLabel(m.id)}</option>`).join("");
   $("#capPaddlers").innerHTML=Array.from({length:n},(_,i)=>
-    `<label>${n>1?"Paddler "+(i+1):"Paddler"}</label><select class="capP" data-i="${i}">${opts}</select>`).join("");
+    `<label>${n>1?"Paddler "+(i+1):"Paddler"}</label><select class="capP" data-i="${i}">${opts(keep[i]||"")}</select>`).join("");
 }
 function renderEntrants(){
   const t=currentTrial();if(!t)return;
@@ -1022,6 +1044,7 @@ $("#lapsLong").addEventListener("change",e=>{const t=currentTrial();if(t){t.laps
 $("#lapsShort").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsShort=Math.max(1,+e.target.value||2);save();renderCapture();}});
 $("#longShortLaps").addEventListener("change",e=>{const t=currentTrial();if(t){t.longShortLaps=Math.max(0,+e.target.value||0);save();renderCapture();}});
 $("#capBoat").addEventListener("change",rebuildPaddlerSelects);
+$("#capPadSearch").addEventListener("input",rebuildPaddlerSelects);
 $("#capAdd").addEventListener("click",()=>{
   const t=currentTrial();if(!t){toast("Start a race first");return;}
   const boat=$("#capBoat").value,course=$("#capCourse").value;
@@ -1030,6 +1053,7 @@ $("#capAdd").addEventListener("click",()=>{
   if(new Set(ids).size!==ids.length){toast("Same paddler picked twice");return;}
   ids.forEach(id=>{const m=S.members.find(x=>x.id===id);if(m)m.boat=boat;});
   S.entries.push({id:"e"+Date.now().toString(36),trialId:t.id,memberIds:ids,boat,course,splits:[],lastTap:0});
+  $("#capPadSearch").value="";
   save();rebuildPaddlerSelects();renderEntrants();toast("Added "+entryName({memberIds:ids}));
 });
 /* --- results message for WhatsApp --- */

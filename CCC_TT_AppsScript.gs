@@ -89,6 +89,22 @@ function doPost(e) {
     try { return json({ ok: true, created: publishBirthdays() }); }
     catch (err) { return json({ error: String(err) }); }
   }
+  // immediately email a (newly swapped-in) timekeeper about their duty
+  if (body.action === 'dutyEmail') {
+    try {
+      var dta = readData();
+      var mem = findMember(dta.members || [], body.who || '');
+      if (!mem || !mem.email) return json({ error: 'no email on file for ' + (body.who || '?') });
+      var dd = new Date(body.date + 'T12:00:00');
+      MailApp.sendEmail({ to: mem.email, cc: ADMIN_CC,
+        subject: 'CCC timekeeping duty — you are now on for ' + fmtDateZA(dd),
+        body: 'Hi ' + (mem.first || body.who) + ',\n\n'
+          + 'The roster was updated: you are now the TIMEKEEPER for the CCC time trial on '
+          + fmtDateZA(dd) + ' (start ' + startTimeForDate(dd) + ').\n\n'
+          + 'Please be at the dam 10 minutes early with a stopwatch.\n\nThanks!\nCCC Timekeeper' });
+      return json({ ok: true, to: mem.email });
+    } catch (err) { return json({ error: String(err) }); }
+  }
 
   // SAFETY: only the document-save path writes. An unknown action (or any POST without a full
   // `data` payload) must NEVER fall through and overwrite the document with an empty object.
@@ -153,7 +169,7 @@ function sendReminders() {
     var days = Math.round((d - now) / 86400000);
     var phase = (days === 3) ? 'mon' : (days === 0 ? 'thu' : null);  // Monday before + Thursday morning
     if (!phase) return;
-    var key = 'rem_' + r.date + '_' + phase;
+    var key = 'rem_' + r.date + '_' + phase + '_' + r.who; // per-person: a swapped-in timekeeper still gets their reminder
     if (props.getProperty(key)) return;
     var m = findMember(members, r.who);
     if (!m || !m.email) return;
