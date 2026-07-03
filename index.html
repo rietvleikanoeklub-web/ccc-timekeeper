@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.29.0 Surfski visibility: Standings boat filter gains 🛶 Kayaks (K1–K3) / 🏄 Surfskis (S1–S3)
+          group options; member card shows a CRAFT breakdown (ski races/best/speed vs kayak) for
+          anyone who paddles a ski.
    0.28.0 Mixed K2 League (August): new Standings tab — K2 crews of one man + one woman score as
           TEAMS, ranked among mixed crews only (revives the club's historical Mixed-K2 League).
           August banners on Tonight + in the announcement. Header homage: "In honour of
@@ -431,7 +434,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.28.0";
+const APP_VERSION = "0.29.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -1105,6 +1108,9 @@ function stopClock(){if(_clock){clearInterval(_clock);_clock=null;}}
 /* ============================================================= STANDINGS / SCORING */
 let standSeason="Summer", standClass="ALL", standCourse="ALL";
 function pointsForPosition(pos){return pos<=9?(11-pos):1;}
+function boatMatch(boat,f){ // "ALL" | exact class | "K*" all kayaks | "S*" all surfskis
+  return f==="ALL"||boat===f||(f==="K*"&&(boat||"")[0]==="K")||(f==="S*"&&(boat||"")[0]==="S");
+}
 function computeStandings(season,boatFilter,courseFilter){
   // Positions are scored WITHIN each course group (long/short) per trial — you can't
   // rank a 5km short-course time against a 10km long-course time.
@@ -1116,7 +1122,7 @@ function computeStandings(season,boatFilter,courseFilter){
       const group=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
         .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
       group.forEach((g,i)=>{
-        const r=g.e;if(boatFilter!=="ALL"&&r.boat!==boatFilter)return;
+        const r=g.e;if(!boatMatch(r.boat,boatFilter))return;
         const pts=pointsForPosition(i+1);
         (r.memberIds||[]).forEach(id=>{ // every crew member earns the boat's position points
           tally[id]=tally[id]||{pts:0,best:null,count:0,name:memberName(id),courseBest:{}};
@@ -1166,7 +1172,8 @@ function renderStandings(){
   $$("#standTabs button").forEach(b=>b.onclick=()=>{standSeason=b.dataset.s;renderStandings();});
   const mixed=standSeason==="Mixed K2";
   $("#standClass").style.display=mixed?"none":"";
-  $("#standClass").innerHTML='<option value="ALL">All boats</option>'+BOATS.map(b=>`<option value="${b}">${b} only</option>`).join("");
+  $("#standClass").innerHTML='<option value="ALL">All boats</option><option value="K*">🛶 Kayaks (K1–K3)</option><option value="S*">🏄 Surfskis (S1–S3)</option>'
+    +BOATS.map(b=>`<option value="${b}">${b} only</option>`).join("");
   $("#standClass").value=standClass;
   $("#standClass").onchange=e=>{standClass=e.target.value;renderStandings();};
   const courses=[["ALL","All courses"],["long","Long only"],["short","Short only"]];
@@ -1342,7 +1349,7 @@ function renderDistances(){
 
 /* ============================================================= MEMBER STATS (read-only) */
 function memberStats(mid){
-  const st={total:0,firstDate:null,pbCount:0,courses:{},lap:{long:{best:null,sum:0,n:0},short:{best:null,sum:0,n:0}},results:[]};
+  const st={total:0,firstDate:null,pbCount:0,courses:{},craft:{},lap:{long:{best:null,sum:0,n:0},short:{best:null,sum:0,n:0}},results:[]};
   S.entries.forEach(e=>{
     if(!(e.memberIds||[]).includes(mid))return;
     const t=trialOf(e);if(!t||!entryDone(e,t))return;
@@ -1354,6 +1361,8 @@ function memberStats(mid){
       pos:grp.findIndex(x=>x.id===e.id)+1,of:grp.length,pb:entryImproved(e)});
     if(entryImproved(e))st.pbCount++;
     st.total++;if(!st.firstDate||t.date<st.firstDate)st.firstDate=t.date;
+    const cf=st.craft[(e.boat||"K")[0]==="S"?"ski":"kayak"]=st.craft[(e.boat||"K")[0]==="S"?"ski":"kayak"]||{n:0,best:null,bestSpeed:null};
+    cf.n++;if(cf.best==null||tot<cf.best)cf.best=tot;if(sp&&(cf.bestSpeed==null||sp>cf.bestSpeed))cf.bestSpeed=sp;
     const c=st.courses[e.course]=st.courses[e.course]||{n:0,best:null,bestDate:null,bestSpeed:null,spSum:0,spN:0,wins:0};
     c.n++;if(grp.length&&grp[0].id===e.id)c.wins++;
     if(c.best==null||tot<c.best){c.best=tot;c.bestDate=t.date;}
@@ -1450,6 +1459,11 @@ function showMemberStats(mid){
       body+=row("PB",fmtClock(c.best)+(c.bestDate?` <span class="muted small">${fmtDate(c.bestDate)}</span>`:""));
       if(c.spN)body+=row("Avg speed",(c.spSum/c.spN).toFixed(1)+" km/h · best "+c.bestSpeed.toFixed(1));
     });
+    if(st.craft.ski){ // ski paddlers get a craft breakdown
+      body+=`<div class="small" style="margin-top:10px;font-weight:800;color:var(--muted)">CRAFT</div>`;
+      body+=row("🏄 Surfski",st.craft.ski.n+" races · best "+fmtClock(st.craft.ski.best)+(st.craft.ski.bestSpeed?" · "+st.craft.ski.bestSpeed.toFixed(1)+"km/h":""));
+      if(st.craft.kayak)body+=row("🛶 Kayak",st.craft.kayak.n+" races · best "+fmtClock(st.craft.kayak.best)+(st.craft.kayak.bestSpeed?" · "+st.craft.kayak.bestSpeed.toFixed(1)+"km/h":""));
+    }
     if(st.lap.long.n||st.lap.short.n){
       body+=`<div class="small" style="margin-top:10px;font-weight:800;color:var(--muted)">LAPS (timed races)</div>`;
       if(st.lap.long.n)body+=row("Long lap",`best ${fmtClock(st.lap.long.best)} · avg ${fmtClock(st.lap.long.sum/st.lap.long.n)}`);
