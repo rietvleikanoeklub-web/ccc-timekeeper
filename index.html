@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.30.0 Weather: conditions (temp, wind speed/direction, gusts) auto-snapshot at the gun via
+          Open-Meteo (free, Rietvlei coords) and stored on the trial; shown on Capture, in the
+          WhatsApp results, and live on Tonight ("Conditions now").
    0.29.1 Header subtitle reworded to "👨‍🏫 Landman — father of the CCC time trials" (less memorial).
    0.29.0 Surfski visibility: Standings boat filter gains 🛶 Kayaks (K1–K3) / 🏄 Surfskis (S1–S3)
           group options; member card shows a CRAFT breakdown (ski races/best/speed vs kayak) for
@@ -237,6 +240,7 @@
       </div>
       <div class="kv"><span class="k">Season</span><span class="v" id="tnSeason"></span></div>
       <div class="kv"><span class="k">Sunset (Pretoria approx)</span><span class="v" id="tnSunset"></span></div>
+      <div class="kv"><span class="k">Conditions now</span><span class="v" id="tnWeather">—</span></div>
       <div class="kv"><span class="k">Timekeeper on duty</span><span class="v" id="tnTk"></span></div>
       <div id="tnNote"></div>
     </div>
@@ -314,6 +318,7 @@
         <span>Short course: <input id="lapsShort" type="number" min="1" style="width:50px;display:inline-block;padding:5px 6px"> laps</span>
       </div>
       <div class="small" id="lapSuggest" style="margin-top:6px"></div>
+      <div class="small muted" id="capWeather" style="margin-top:4px"></div>
     </div>
 
     <div class="card" id="boatsCard">
@@ -435,7 +440,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.29.1";
+const APP_VERSION = "0.30.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -664,6 +669,7 @@ function renderTonight(){
   $("#tnSeason").innerHTML=`<span class="pill ${season==="Winter"?"winter":season==="Triple S"?"triples":"summer"}">${season}</span>`;
   $("#tnSunset").textContent=sunset+"  ·  off water before dark";
   $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
+  currentWeather().then(w=>{const el=$("#tnWeather");if(el)el.textContent=weatherLine(w);}).catch(()=>{});
 
   let note="";
   {const sg=suggestCourse(d);const lk=(sg.long*(+S.settings.longLapKm||2.3)+sg.longShort*(+S.settings.shortLapKm||1.4));
@@ -796,6 +802,22 @@ $("#calBirthdays").addEventListener("click",async()=>{
   }catch(e){$("#calResult").textContent="Failed (offline?)";}
 });
 
+/* ============================================================= WEATHER (Rietvlei, Open-Meteo — free, no key) */
+const RIETVLEI={lat:-25.891,lon:28.292};
+function windDirName(d){const dirs=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+  return dirs[Math.round(((d%360)/22.5))%16];}
+async function fetchWeather(){
+  const u=`https://api.open-meteo.com/v1/forecast?latitude=${RIETVLEI.lat}&longitude=${RIETVLEI.lon}&current=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&timezone=Africa%2FJohannesburg`;
+  const r=await fetch(u);const j=await r.json();const c=j.current;
+  return {temp:c.temperature_2m,wind:c.wind_speed_10m,dir:c.wind_direction_10m,gust:c.wind_gusts_10m,at:c.time};
+}
+function weatherLine(w){if(!w)return"";
+  return `${Math.round(w.temp)}°C · wind ${Math.round(w.wind)} km/h ${windDirName(w.dir)}${w.gust&&w.gust>=w.wind+5?` (gusts ${Math.round(w.gust)})`:""}`;}
+let _wx=null,_wxAt=0;
+async function currentWeather(){ // cached 10 min so Tonight doesn't hammer the API
+  if(_wx&&Date.now()-_wxAt<600000)return _wx;
+  _wx=await fetchWeather();_wxAt=Date.now();return _wx;}
+
 /* ============================================================= CAPTURE (live lap timer) */
 let capFilter="ALL", _clock=null;
 function defaultLaps(season){
@@ -885,6 +907,7 @@ function renderCapture(){
     +`Sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b>.</span>`
     +((sg.long!==(t.lapsLong||2)||sg.longShort!==(t.longShortLaps||0))?` <button class="sm sec" id="lapApply" style="padding:4px 8px">Use suggestion</button>`:"");
   if($("#lapApply"))$("#lapApply").onclick=()=>{t.lapsLong=sg.long;t.longShortLaps=sg.longShort;save();renderCapture();toast("Long course set to "+courseLabel(sg.long,sg.longShort));};
+  $("#capWeather").textContent=t.weather?("🌤 Conditions at the gun: "+weatherLine(t.weather)):"";
   // suggestion banner
   const mine=S.entries.filter(e=>e.trialId===t.id);
   const prior=priorTrialWithEntries(t);
@@ -1061,7 +1084,9 @@ function editBoat(eid){
 $("#capTrial").addEventListener("change",e=>{S.capSel=e.target.value;save();renderCapture();});
 $("#btnRace").addEventListener("click",()=>{
   const t=currentTrial();if(!t)return;
-  if(!t.startedAt){t.startedAt=Date.now();save();renderCapture();toast("Race started 🏁");}
+  if(!t.startedAt){t.startedAt=Date.now();save();renderCapture();toast("Race started 🏁");
+    fetchWeather().then(w=>{const tt=S.trials.find(x=>x.id===t.id); // stamp conditions at the gun
+      if(tt&&!tt.weather){tt.weather=w;save();renderCapture();}}).catch(()=>{});}
   else if(confirm("Reset the race clock? Lap times already recorded are kept.")){t.startedAt=null;save();renderCapture();}
 });
 $("#lapsLong").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsLong=Math.max(1,+e.target.value||2);save();renderCapture();}});
@@ -1083,6 +1108,7 @@ $("#capAdd").addEventListener("click",()=>{
 /* --- results message for WhatsApp --- */
 function buildResults(t){
   const lines=[`🏆 *CCC Time Trial — ${fmtDate(t.date)}* (${t.season})`];
+  if(t.weather)lines.push("🌤 "+weatherLine(t.weather));
   ["long","short"].forEach(course=>{
     const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
       .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
