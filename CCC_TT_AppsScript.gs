@@ -164,11 +164,13 @@ function sendReminders() {
   var data = readData();
   var roster = data.roster || [], members = data.members || [];
   var props = PropertiesService.getScriptProperties();
-  var now = new Date(); now.setHours(0, 0, 0, 0);
+  // date-only arithmetic (both parse as UTC midnight) so "days until" is an exact integer —
+  // the old 12:00-vs-00:00 comparison rounded every phase one day late (Thu email on Fri)
+  var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   var sent = 0;
   roster.forEach(function (r) {
     var d = new Date(r.date + 'T12:00:00');
-    var days = Math.round((d - now) / 86400000);
+    var days = Math.round((Date.parse(r.date) - Date.parse(today)) / 86400000);
     var phase = (days === 3) ? 'mon' : (days === 0 ? 'thu' : null);  // Monday before + Thursday morning
     if (!phase) return;
     var key = 'rem_' + r.date + '_' + phase + '_' + r.who; // per-person: a swapped-in timekeeper still gets their reminder

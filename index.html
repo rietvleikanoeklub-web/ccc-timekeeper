@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.30.1 WhatsApp duty-reminder DM now includes the short app link. (Backend: fixed reminder day
+          maths — Thu email was arriving Friday, Mon email Tuesday, due to half-day rounding.)
    0.30.0 Weather: conditions (temp, wind speed/direction, gusts) auto-snapshot at the gun via
           Open-Meteo (free, Rietvlei coords) and stored on the trial; shown on Capture, in the
           WhatsApp results, and live on Tonight ("Conditions now").
@@ -440,7 +442,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.30.0";
+const APP_VERSION = "0.30.1";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -725,7 +727,9 @@ function dutyMemberPhone(who){const m=S.members.find(m=>(m.first+" "+(m.last||""
 function remind(date){
   const r=S.roster.find(x=>x.date===date);if(!r)return;const season=seasonFor(new Date(date+"T12:00:00"));
   const start=startTimeFor(new Date(date+"T12:00:00"));
-  const msg=`Hi ${r.who.split(" ")[0]} 👋 reminder: you're on *timekeeping duty* for the CCC time trial on *${fmtDate(date)}*. Start ${start}. Please be at the dam 10 min early with a stopwatch. If you can't make it, arrange a swap (a timekeeper who paddles makes the trial unofficial). Thanks!`;
+  const msg=`Hi ${r.who.split(" ")[0]} 👋 reminder: you're on *timekeeping duty* for the CCC time trial on *${fmtDate(date)}*. Start ${start}. Please be at the dam 10 min early with a stopwatch. If you can't make it, arrange a swap (a timekeeper who paddles makes the trial unofficial).
+📲 App: https://tinyurl.com/2b9qc7qg
+Thanks!`;
   shareWhatsApp(msg, dutyMemberPhone(r.who));
 }
 function requestSwap(date){
