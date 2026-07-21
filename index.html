@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.31.0 Sunset now computed astronomically per date for Rietvlei (NOAA algorithm, ±1 min, offline)
+          instead of a mid-month lookup — Tonight, the announcement, and the lap planner all track the
+          real sunset through the month (monthly table kept only as fallback).
    0.30.1 WhatsApp duty-reminder DM now includes the short app link. (Backend: fixed reminder day
           maths — Thu email was arriving Friday, Mon email Tuesday, due to half-day rounding.)
    0.30.0 Weather: conditions (temp, wind speed/direction, gusts) auto-snapshot at the gun via
@@ -442,13 +445,34 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.30.1";
+const APP_VERSION = "0.31.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
-/* ---------------- approx Pretoria/Joburg sunset by week (from Winter rules PDF + summer estimate) ---------------- */
-// month index 0-11 -> rough sunset "HH:MM" mid-month; used to advise start time + winter cutoff.
+/* ---------------- sunset: computed astronomically for Rietvlei (exact per date, works offline) ---------------- */
+// fallback table (mid-month approx) only used if the computation ever fails
 const SUNSET = ["18:42","18:28","18:02","17:47","17:30","17:23","17:30","17:48","18:00","18:12","18:28","18:42"];
+function sunsetFor(date){ // NOAA sunrise/sunset algorithm at Rietvlei; returns "HH:MM" SAST
+  try{
+    const rad=Math.PI/180, lat=-25.891, lon=28.292;
+    const start=new Date(date.getFullYear(),0,0);
+    const doy=Math.floor((date-start)/86400000);
+    const lngHour=lon/15, t=doy+((18-lngHour)/24);
+    const M=(0.9856*t)-3.289;
+    let L=M+(1.916*Math.sin(M*rad))+(0.020*Math.sin(2*M*rad))+282.634; L=(L+360)%360;
+    let RA=Math.atan(0.91764*Math.tan(L*rad))/rad; RA=(RA+360)%360;
+    RA=(RA+(Math.floor(L/90)*90-Math.floor(RA/90)*90))/15;
+    const sinDec=0.39782*Math.sin(L*rad), cosDec=Math.cos(Math.asin(sinDec));
+    const cosH=(Math.cos(90.833*rad)-(sinDec*Math.sin(lat*rad)))/(cosDec*Math.cos(lat*rad));
+    if(cosH<-1||cosH>1)return SUNSET[date.getMonth()];
+    const H=(Math.acos(cosH)/rad)/15;
+    const T=H+RA-(0.06571*t)-6.622;
+    let UT=(T-lngHour)%24; if(UT<0)UT+=24;
+    const local=(UT+2)%24; // SAST
+    let h=Math.floor(local), m=Math.round((local-h)*60); if(m===60){h++;m=0;}
+    return pad(h)+":"+pad(m);
+  }catch(e){return SUNSET[date.getMonth()];}
+}
 
 /* ---------------- seed roster (pasted 2026 schedule) ---------------- */
 const SEED_ROSTER = [
@@ -656,7 +680,7 @@ function defaultCourse(season){
 /* ============================================================= TONIGHT */
 function renderTonight(){
   const d=nextThursday();const key=ymd(d);const season=seasonFor(d);
-  const start=startTimeFor(d);const sunset=SUNSET[d.getMonth()];
+  const start=startTimeFor(d);const sunset=sunsetFor(d);
   const duty=S.roster.find(r=>r.date===key);
   const courseSel=$("#tnCourseSel");
   // build course options
@@ -693,7 +717,7 @@ $("#btnAnnounce").addEventListener("click",()=>{
 ⏰ Start: *${start}*
 📏 Tonight: *${c.label}*
 🧑‍⚖️ Timekeeper: *${duty?duty.who:"NOT ASSIGNED — please volunteer"}*
-🌅 Sunset ~${SUNSET[d.getMonth()]} — life jackets compulsory.${notes?"\n📝 "+notes:""}${d.getMonth()===7?"\n🚻 *August = Mixed K2 month!* One man + one woman per K2 — own league, own trophy. Grab a partner!":""}
+🌅 Sunset ~${sunsetFor(d)} — life jackets compulsory.${notes?"\n📝 "+notes:""}${d.getMonth()===7?"\n🚻 *August = Mixed K2 month!* One man + one woman per K2 — own league, own trophy. Grab a partner!":""}
 📲 App: https://tinyurl.com/2b9qc7qg
 
 See you on the water!`;
@@ -857,7 +881,7 @@ function entrySpeed(e){if(e.noSpeed)return null; // non-standard distance that n
   const tot=entryTotal(e);const sp=tot?entryKm(e)/(tot/3600):null;return (sp&&sp<40)?sp:null;} // km/h
 /* sunset-based suggestion for the long course (each ~10 min later sunset adds a lap) */
 function suggestCourse(date){
-  const ss=SUNSET[date.getMonth()];const m=parseInt(ss.split(":")[0],10)*60+parseInt(ss.split(":")[1],10);
+  const ss=sunsetFor(date);const m=parseInt(ss.split(":")[0],10)*60+parseInt(ss.split(":")[1],10);
   let s; // each ~10 min later sunset adds a lap; max 4 long + 1 short (~10.5 km, the summer full course)
   if(m>=18*60+13) s={long:4,longShort:1};
   else if(m>=18*60+3) s={long:4,longShort:0};
