@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.34.0 Members can be marked "inactive" (left the club / emigrated): results, records and past
+          standings keep them, but they drop out of the paddler pickers and the timekeeper lists.
    0.33.0 Privacy: the cloud only returns phone numbers, e-mail addresses, PSA IDs, birthdays and
           the PINs to a caller that presents a club PIN. Without one it serves names + times only
           (flagged "sanitised"), and the app refuses to push such a document back so nothing can be
@@ -463,7 +465,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.33.0";
+const APP_VERSION = "0.34.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -668,6 +670,8 @@ function ymd(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate
 function fmtDate(s){const d=new Date(s+"T12:00:00");return d.toLocaleDateString("en-ZA",{weekday:"short",day:"numeric",month:"short"});}
 function memberName(id){const m=S.members.find(x=>x.id===id);return m?((m.first+" "+(m.last||"")).trim()):"—";}
 function memberFull(m){return (m.first+" "+(m.last||"")).trim();}
+// Inactive = left the club / emigrated. Kept for history + past results, hidden from every picker.
+function activeMembers(){return S.members.filter(m=>!m.inactive);}
 function memberLabel(id){const m=S.members.find(x=>x.id===id);if(!m)return"—";return memberFull(m)+(m.alias?` (${m.alias})`:"");}
 function ageFromBirthday(bd){ // current age from a YYYY-MM-DD birthday
   if(!bd||String(bd).length<10)return "";
@@ -785,7 +789,7 @@ function renderRoster(){
   $$("#rosterList [data-remind]").forEach(b=>b.onclick=()=>remind(b.dataset.remind));
   $$("#rosterList [data-swap]").forEach(b=>b.onclick=()=>requestSwap(b.dataset.swap));
   // who select
-  $("#rNewWho").innerHTML='<option value="">— who —</option>'+S.members.map(m=>`<option>${(m.first+" "+(m.last||"")).trim()}</option>`).join("");
+  $("#rNewWho").innerHTML='<option value="">— who —</option>'+activeMembers().map(m=>`<option>${(m.first+" "+(m.last||"")).trim()}</option>`).join("");
 }
 function dutyMemberPhone(who){const m=S.members.find(m=>(m.first+" "+(m.last||"")).trim().toLowerCase()===who.toLowerCase()||m.first.toLowerCase()===who.toLowerCase());return m&&m.phone?m.phone:"";}
 function remind(date){
@@ -799,7 +803,8 @@ Thanks!`;
 function requestSwap(date){
   const r=S.roster.find(x=>x.date===date);if(!r)return;
   const cur=S.members.find(m=>memberFull(m).toLowerCase()===r.who.toLowerCase()||m.first.toLowerCase()===r.who.toLowerCase());
-  const opts=S.members.slice().sort((a,b)=>memberFull(a).localeCompare(memberFull(b)))
+  const opts=activeMembers().filter(m=>!cur||m.id!==cur.id).concat(cur?[cur]:[])
+    .sort((a,b)=>memberFull(a).localeCompare(memberFull(b)))
     .map(m=>`<option value="${m.id}" ${cur&&m.id===cur.id?"selected":""}>${memberLabel(m.id)}</option>`).join("");
   const body=`<label>Reassign duty to</label><select id="swapWho">${opts}</select>
     <div class="small muted" style="margin-top:8px">Members paddle <i>and</i> keep time, so pick whoever is taking over — they'll get a WhatsApp reminder. Or ask the whole group.</div>
@@ -1058,7 +1063,7 @@ function rebuildPaddlerSelects(){
   const q=(($("#capPadSearch")&&$("#capPadSearch").value)||"").trim().toLowerCase();
   const used=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
   const rec=recentRank(8);
-  const sorted=S.members.filter(m=>!used.has(m.id))
+  const sorted=activeMembers().filter(m=>!used.has(m.id))
     .sort((a,b)=>(rec[b.id]||0)-(rec[a.id]||0)||memberFull(a).localeCompare(memberFull(b))); // recent TT paddlers first, then A–Z
   const match=m=>!q||(memberFull(m)+" "+(m.alias||"")).toLowerCase().includes(q);
   const opts=sel=>'<option value="">— paddler —</option>'+sorted.filter(m=>match(m)||m.id===sel)
@@ -1130,7 +1135,7 @@ function editBoat(eid){
   const padOpts=(selId)=>{
     const used=new Set(S.entries.filter(x=>x.trialId===t.id&&x.id!==e.id).flatMap(x=>x.memberIds));
     const rank=paddlerRank();
-    return '<option value="">— paddler —</option>'+S.members.filter(m=>!used.has(m.id)||m.id===selId)
+    return '<option value="">— paddler —</option>'+S.members.filter(m=>(!used.has(m.id)&&!m.inactive)||m.id===selId)
       .sort((a,b)=>(rank[b.id]||0)-(rank[a.id]||0)||(a.first+a.last).localeCompare(b.first+b.last))
       .map(m=>`<option value="${m.id}" ${m.id===selId?"selected":""}>${memberLabel(m.id)}</option>`).join("");
   };
@@ -1381,8 +1386,8 @@ function renderMembers(){
   const q=($("#memSearch").value||"").toLowerCase();
   const list=S.members.filter(m=>((m.first+" "+(m.last||"")+" "+(m.alias||"")+" "+m.reg)).toLowerCase().includes(q))
     .sort((a,b)=>(a.first+a.last).localeCompare(b.first+b.last));
-  $("#memList").innerHTML=list.length?list.map(m=>`<div class="duty">
-      <span class="grow" data-stats="${m.id}" style="cursor:pointer"><b>${memberFull(m)}</b>${m.alias?` <span class="alias">“${m.alias}”</span>`:""}
+  $("#memList").innerHTML=list.length?list.map(m=>`<div class="duty" style="${m.inactive?"opacity:.5":""}">
+      <span class="grow" data-stats="${m.id}" style="cursor:pointer"><b>${memberFull(m)}</b>${m.alias?` <span class="alias">“${m.alias}”</span>`:""}${m.inactive?' <span class="boat">inactive</span>':""}
       <span class="small muted">${m.boat||""}${m.sex?" · "+m.sex:""}${memberAge(m)!==""?" · "+memberAge(m)+"y":""}${m.reg?" · PSA "+m.reg:""}${m.phone?" · "+m.phone:""}${m.email?" · ✉":""}</span></span>
       <button class="sm ghost adminonly" data-edit="${m.id}">edit</button>
     </div>`).join(""):'<div class="empty">No members.</div>';
@@ -1624,6 +1629,9 @@ function editMember(id){
       <div style="width:100px"><label>Boat</label><select id="mBoat">${BOATS.map(b=>`<option ${m.boat===b?"selected":""}>${b}</option>`).join("")}</select></div>
     </div>
     <div class="row wrap"><div class="grow">${fld("Birthday","mBday",m.birthday,"date")}</div><div class="grow">${fld("PSA ID","mReg",m.reg)}</div></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px">
+      <input type="checkbox" id="mInactive" ${m.inactive?"checked":""} style="width:auto">
+      <span>Inactive — left the club. Keeps their results and records, but hides them from the paddler and timekeeper lists.</span></label>
     <button class="ghost danger" id="mDel" style="margin-top:12px;width:100%">Remove member</button>`;
   openModal("Edit member",body,()=>{
     const first=$("#mFirst").value.trim(), last=$("#mLast").value.trim();
@@ -1633,7 +1641,8 @@ function editMember(id){
     const ageStore=(ageVal&&ageVal!==String(ageFromBirthday(bdayVal)))?ageVal:"";
     Object.assign(m,{first,last,alias:$("#mAlias").value.trim(),phone:$("#mPhone").value.trim(),
       email:$("#mEmail").value.trim(),sex:$("#mSex").value,age:ageStore,
-      boat:$("#mBoat").value,reg:$("#mReg").value.trim(),birthday:bdayVal});
+      boat:$("#mBoat").value,reg:$("#mReg").value.trim(),birthday:bdayVal,
+      inactive:$("#mInactive").checked});
     save();renderMembers();renderRoster();toast("Saved "+memberFull(m));
   },"Save");
   const del=$("#mDel");if(del)del.onclick=()=>{if(confirm("Remove "+memberFull(m)+"?")){S.members=S.members.filter(x=>x.id!==m.id);save();renderMembers();closeModal();toast("Removed");}};
