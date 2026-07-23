@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.32.1 Announcement now names the special course on the "Tonight" line and reports how many boats
+          are already entered.
    0.32.0 Special time trials: tick "⭐ Special time trial" on Capture, name it and set its distance +
           laps (e.g. "K3 5 km"). Overrides the long course for that night only; the name shows on the
           boats, filter tabs, Tonight, the announcement and the results message. Scores as normal.
@@ -456,7 +458,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.32.0";
+const APP_VERSION = "0.32.1";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -729,9 +731,11 @@ $("#btnAnnounce").addEventListener("click",()=>{
   const msg=
 `🛶 *CCC Time Trial — ${fmtDate(key)}*
 ⏰ Start: *${start}*
-📏 Tonight: *${c.label}*
+📏 Tonight: *${(function(){const tt=S.trials.find(x=>x.date===key);return tt&&tt.special&&tt.special.name?tt.special.name+(+tt.special.km?` (${(+tt.special.km).toFixed(1)} km)`:""):c.label;})()}*
 🧑‍⚖️ Timekeeper: *${duty?duty.who:"NOT ASSIGNED — please volunteer"}*
-${(function(){const tt=S.trials.find(x=>x.date===key);return tt&&tt.special&&tt.special.name?`⭐ *SPECIAL: ${tt.special.name}*${+tt.special.km?` — ${(+tt.special.km).toFixed(1)} km`:""}\n`:"";})()}🌅 Sunset ~${sunsetFor(d)} — life jackets compulsory.${notes?"\n📝 "+notes:""}${d.getMonth()===7?"\n🚻 *August = Mixed K2 month!* One man + one woman per K2 — own league, own trophy. Grab a partner!":""}
+${(function(){const tt=S.trials.find(x=>x.date===key);if(!tt||!tt.special||!tt.special.name)return"";
+  const n=S.entries.filter(e=>e.trialId===tt.id).length;
+  return `⭐ *Special time trial* — not the usual course.${n?` ${n} boats already entered.`:""}\n`;})()}🌅 Sunset ~${sunsetFor(d)} — life jackets compulsory.${notes?"\n📝 "+notes:""}${d.getMonth()===7?"\n🚻 *August = Mixed K2 month!* One man + one woman per K2 — own league, own trophy. Grab a partner!":""}
 📲 App: https://tinyurl.com/2b9qc7qg
 
 See you on the water!`;
