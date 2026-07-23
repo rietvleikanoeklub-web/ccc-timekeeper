@@ -28,6 +28,11 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.33.0 Privacy: the cloud only returns phone numbers, e-mail addresses, PSA IDs, birthdays and
+          the PINs to a caller that presents a club PIN. Without one it serves names + times only
+          (flagged "sanitised"), and the app refuses to push such a document back so nothing can be
+          blanked out. A never-unlocked device verifies its PIN against the backend to get in.
+          Public results page reads the separate, contact-free ?action=public feed.
    0.32.1 Announcement now names the special course on the "Tonight" line and reports how many boats
           are already entered.
    0.32.0 Special time trials: tick "⭐ Special time trial" on Capture, name it and set its distance +
@@ -458,7 +463,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.32.1";
+const APP_VERSION = "0.33.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -588,13 +593,25 @@ function save(){S.updatedAt=Date.now();S.rev=(S.rev||0)+1;persistLocal();schedul
 let _pushTimer=null, _syncing=false;
 function setCloud(url,token){CLOUD_URL=url.trim();CLOUD_TOKEN=(token||"").trim();
   localStorage.setItem("ccc_tk_cloud_url",CLOUD_URL);localStorage.setItem("ccc_tk_cloud_token",CLOUD_TOKEN);}
-function cloudUrl(action){return CLOUD_URL+(CLOUD_URL.includes("?")?"&":"?")+"action="+action+(CLOUD_TOKEN?"&token="+encodeURIComponent(CLOUD_TOKEN):"");}
-async function cloudGet(action){const r=await fetch(cloudUrl(action),{method:"GET"});return r.json();}
+// The PIN rides along on reads: the backend only returns contact details + PINs to a caller
+// that knows one. Without it we still get names/times, flagged `sanitised`.
+function knownPin(){const s=S.settings||{};return s.adminPin||s.appPin||localStorage.getItem("ccc_tk_pin")||"";}
+function cloudUrl(action,pin){pin=pin!==undefined?pin:knownPin();
+  return CLOUD_URL+(CLOUD_URL.includes("?")?"&":"?")+"action="+action
+    +(CLOUD_TOKEN?"&token="+encodeURIComponent(CLOUD_TOKEN):"")
+    +(pin?"&pin="+encodeURIComponent(pin):"");}
+async function cloudGet(action,pin){const r=await fetch(cloudUrl(action,pin),{method:"GET"});return r.json();}
+let _readOnly=false; // last pull came back sanitised — we must not push blanks over good data
+function setReadOnly(v){_readOnly=v;const b=$("#syncRO");if(b)b.style.display=v?"":"none";}
 async function cloudPost(data){ // text/plain avoids a CORS preflight Apps Script can't answer
   const r=await fetch(CLOUD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},
     body:JSON.stringify({token:CLOUD_TOKEN,data})});return r.json();}
 function schedulePush(){if(!CLOUD_URL)return;clearTimeout(_pushTimer);_pushTimer=setTimeout(pushCloud,1400);}
-async function pushCloud(){if(!CLOUD_URL||_syncing)return;_syncing=true;renderSyncInfo();
+async function pushCloud(){if(!CLOUD_URL||_syncing)return;
+  // Never write back a document we only received in sanitised form — it would blank out
+  // everyone's contact details and the PINs. Unlock with the club PIN and syncing resumes.
+  if(_readOnly){renderSyncInfo();return;}
+  _syncing=true;renderSyncInfo();
   try{
     // don't let a device with a blank PIN overwrite one already set in the cloud
     if(!(S.settings.appPin&&S.settings.adminPin)){
@@ -609,9 +626,14 @@ async function pushCloud(){if(!CLOUD_URL||_syncing)return;_syncing=true;renderSy
   finally{_syncing=false;renderSyncInfo();}}
 async function pullCloud(announce){if(!CLOUD_URL)return;_syncing=true;renderSyncInfo();
   try{const cloud=await cloudGet("data");
+    if(cloud&&!cloud.error)setReadOnly(!!cloud.sanitised);
     if(cloud&&!cloud.error&&(cloud.updatedAt||0)>(S.updatedAt||0)){
       const kPin=S.settings&&S.settings.appPin,kAdm=S.settings&&S.settings.adminPin,kAdmins=S.settings&&S.settings.admins;
+      // a sanitised pull carries no contact details — keep the ones we already hold
+      const keep={};if(cloud.sanitised)(S.members||[]).forEach(m=>{keep[m.id]=m;});
       S=normalize(cloud);
+      if(cloud.sanitised)S.members.forEach(m=>{const o=keep[m.id];if(!o)return;
+        ["phone","email","reg","birthday"].forEach(k=>{if(o[k]&&!m[k])m[k]=o[k];});});
       // sticky access settings: a blank cloud value must not wipe a locally-set PIN
       if(!S.settings.appPin&&kPin)S.settings.appPin=kPin;
       if(!S.settings.adminPin&&kAdm)S.settings.adminPin=kAdm;
@@ -1378,11 +1400,26 @@ function maybeLock(){
 }
 function tryUnlock(v){
   v=(v||"").trim();
-  if(S.settings.adminPin && v===S.settings.adminPin){SESSION_ADMIN=true;sessionStorage.setItem("ccc_admin","1");sessionStorage.setItem("ccc_unlocked","1");applyAdminUI();maybeLock();renderAll();toast("Welcome, admin");return true;}
-  if(v===S.settings.appPin){sessionStorage.setItem("ccc_unlocked","1");maybeLock();renderAll();toast("Welcome");return true;}
+  if(S.settings.adminPin && v===S.settings.adminPin){SESSION_ADMIN=true;sessionStorage.setItem("ccc_admin","1");sessionStorage.setItem("ccc_unlocked","1");localStorage.setItem("ccc_tk_pin",v);applyAdminUI();maybeLock();renderAll();toast("Welcome, admin");return true;}
+  if(S.settings.appPin && v===S.settings.appPin){sessionStorage.setItem("ccc_unlocked","1");localStorage.setItem("ccc_tk_pin",v);maybeLock();renderAll();toast("Welcome");return true;}
   return false;
 }
-$("#lockOk").addEventListener("click",()=>{if(!tryUnlock($("#lockPin").value)){$("#lockMsg").textContent="Wrong PIN — try again";$("#lockPin").value="";}});
+/* A device that has never been unlocked holds no PIN, and the cloud no longer hands them
+   out — so ask the backend: a PIN that unlocks the full document is the right PIN. */
+async function tryUnlockCloud(v){
+  v=(v||"").trim();if(!v||!CLOUD_URL)return false;
+  try{const c=await cloudGet("data",v);
+    if(!c||c.error||c.sanitised||!c.settings)return false;
+    localStorage.setItem("ccc_tk_pin",v);
+    S=normalize(c);setReadOnly(false);persistLocal();
+    return tryUnlock(v);
+  }catch(e){return false;}
+}
+$("#lockOk").addEventListener("click",async()=>{const v=$("#lockPin").value;
+  if(tryUnlock(v))return;
+  $("#lockMsg").textContent="Checking…";
+  if(await tryUnlockCloud(v))return;
+  $("#lockMsg").textContent="Wrong PIN — try again";$("#lockPin").value="";});
 $("#lockPin").addEventListener("keydown",e=>{if(e.key==="Enter")$("#lockOk").click();});
 function renderAccess(){
   const el=$("#accessCard");if(!el)return;
@@ -1634,7 +1671,8 @@ $("#expBtn").addEventListener("click",()=>{
 $("#wipeBtn").addEventListener("click",()=>{if(confirm("Erase all timekeeping data on this device?")){localStorage.removeItem(STORE_KEY);S=load();save();renderAll();toast("Reset");}});
 function renderSyncInfo(){
   const last=S.settings&&S.settings.lastSync?new Date(S.settings.lastSync).toLocaleString("en-ZA"):"never";
-  const state=!CLOUD_URL?"Not connected — local only.":(_syncing?"Syncing…":"Connected ✓");
+  const state=!CLOUD_URL?"Not connected — local only.":
+    (_readOnly?"Read-only — unlock with the club PIN to save changes":(_syncing?"Syncing…":"Connected ✓"));
   const el=$("#syncInfo");if(el)el.textContent=`${CLOUD_URL?"Cloud":"Local"} · last sync: ${last}`;
   const cs=$("#cloudStatus");if(cs)cs.textContent=state+(CLOUD_URL?"  ·  rev "+(S.rev||0):"");
 }

@@ -56,12 +56,43 @@ var CAL_ID        = 'primary';          // club calendar to publish duties to (r
 var APP_URL       = 'https://rietvleikanoeklub-web.github.io/ccc-timekeeper/';  // linked in every email
 
 function doGet(e) {
-  var action = (e && e.parameter && e.parameter.action) || 'data';
+  var p = (e && e.parameter) || {};
+  var action = p.action || 'data';
   if (!tokenOk(e)) return json({ error: 'unauthorized' });
   if (action === 'ping')    return json({ ok: true, ts: new Date().toISOString() });
-  if (action === 'members') return json(getBarTabMembers());
   if (action === 'public')  return json(publicData());
-  return json(readData());
+  var authed = pinOk(p.pin);
+  // contact details only ever leave the server for a caller who knows a club PIN
+  if (action === 'members') return authed ? json(getBarTabMembers()) : json({ error: 'pin required' });
+  var d = readData();
+  return json(authed ? d : sanitised(d));
+}
+
+/* A caller is trusted if it presents the club PIN or the admin PIN. Before any PIN has
+   been set (first run) everything is open, exactly as it was. */
+function pinOk(pin) {
+  var s = (readData() || {}).settings || {};
+  if (!s.appPin && !s.adminPin) return true;
+  if (!pin) return false;
+  return String(pin) === String(s.appPin || '') || String(pin) === String(s.adminPin || '');
+}
+
+/* Full document minus anything private: no phone numbers, e-mail addresses, PSA IDs,
+   birthdays or PINs. `sanitised:true` tells the app not to write these blanks back. */
+function sanitised(d) {
+  d = d || {};
+  var s = {}, src = d.settings || {};
+  Object.keys(src).forEach(function (k) { if (k !== 'appPin' && k !== 'adminPin') s[k] = src[k]; });
+  var out = {};
+  Object.keys(d).forEach(function (k) { if (k !== 'members' && k !== 'settings') out[k] = d[k]; });
+  out.settings = s;
+  out.members = (d.members || []).map(function (m) {
+    return { id: m.id, first: m.first, last: m.last, alias: m.alias || '', sex: m.sex || '',
+             age: m.age, boat: m.boat || '' };
+  });
+  out.sanitised = true;
+  out.pinRequired = true;
+  return out;
 }
 
 /* Read-only, sanitised copy for the public results page (results.html): names + times only.
