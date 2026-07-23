@@ -60,7 +60,24 @@ function doGet(e) {
   if (!tokenOk(e)) return json({ error: 'unauthorized' });
   if (action === 'ping')    return json({ ok: true, ts: new Date().toISOString() });
   if (action === 'members') return json(getBarTabMembers());
+  if (action === 'public')  return json(publicData());
   return json(readData());
+}
+
+/* Read-only, sanitised copy for the public results page (results.html): names + times only.
+   Strips phone/email/PSA ID/birthday and both PINs so a link posted on social media
+   can never expose members' contact details. */
+function publicData() {
+  var d = readData() || {};
+  return {
+    updatedAt: d.updatedAt || 0,
+    settings: { longLapKm: (d.settings || {}).longLapKm, shortLapKm: (d.settings || {}).shortLapKm },
+    members: (d.members || []).map(function (m) {
+      return { id: m.id, first: m.first, last: m.last, alias: m.alias || '', sex: m.sex || '' };
+    }),
+    trials: d.trials || [],
+    entries: d.entries || []
+  };
 }
 
 function doPost(e) {

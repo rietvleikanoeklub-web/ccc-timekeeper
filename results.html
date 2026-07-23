@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>CCC Time Trials — Results &amp; Standings</title>
+<meta name="description" content="Centurion Canoe Club Thursday time trial results and league standings, Rietvlei Dam.">
+<meta property="og:title" content="CCC Time Trials — Results &amp; Standings">
+<meta property="og:description" content="Thursday night results and league standings from Rietvlei Dam.">
+<link rel="icon" href="icon.svg">
+<style>
+/* Public read-only results page. No PIN, no editing — reads the sanitised ?action=public
+   feed (names + times only; no phone numbers, e-mail addresses or PINs). */
+:root{--bg:#0d1520;--card:#152234;--line:#24374f;--ink:#eaf2ff;--mut:#8fa6c4;--acc:#37c1ff;--gold:#ffce4d;--win:#5ad19a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  padding:0 14px 48px;max-width:760px;margin:0 auto;-webkit-text-size-adjust:100%}
+header{padding:22px 0 14px;text-align:center}
+h1{margin:0;font-size:22px;letter-spacing:.2px}
+.sub{color:var(--mut);font-size:13px;margin-top:4px}
+.homage{color:var(--gold);font-size:12px;margin-top:6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:14px 0}
+h2{margin:0 0 4px;font-size:16px}
+.meta{color:var(--mut);font-size:13px;margin-bottom:10px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs button{flex:1;min-width:88px;background:#1b2b40;color:var(--ink);border:1px solid var(--line);
+  border-radius:9px;padding:8px 6px;font-size:13px;cursor:pointer}
+.tabs button.on{background:var(--acc);color:#04121d;border-color:var(--acc);font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:7px 5px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+td.n,th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+.pos{width:30px;color:var(--mut);font-variant-numeric:tabular-nums}
+.p1 .pos{color:var(--gold);font-weight:800}.p2 .pos,.p3 .pos{color:var(--ink);font-weight:700}
+.boat{display:inline-block;background:#1b2b40;border:1px solid var(--line);border-radius:5px;
+  padding:0 5px;font-size:11px;color:var(--mut);margin-left:6px}
+.grp{margin:14px 0 6px;font-size:13px;color:var(--acc);font-weight:700;letter-spacing:.3px}
+.star{color:var(--gold)}
+.pb{color:var(--win);font-size:11px;margin-left:5px}
+.foot{text-align:center;color:var(--mut);font-size:12px;margin-top:22px;line-height:1.7}
+.foot a{color:var(--acc)}
+.cta{display:block;text-align:center;background:var(--acc);color:#04121d;font-weight:700;
+  text-decoration:none;border-radius:11px;padding:12px;margin-top:12px}
+.err{color:#ff9a9a}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛶 CCC Time Trials</h1>
+  <div class="sub">Centurion Canoe Club · Rietvlei Dam · Thursday nights</div>
+  <div class="homage">👨‍🏫 Landman — father of the CCC time trials</div>
+</header>
+
+<div class="card" id="latest"><div class="meta">Loading results…</div></div>
+<div class="card" id="standings"></div>
+
+<a class="cta" href="./">📲 Open the timekeeping app</a>
+<div class="foot">
+  Results are posted by the night's timekeeper straight from the app.<br>
+  Spotted a mistake? Tell the timekeeper or an admin and it gets fixed on the spot.
+</div>
+
+<script>
+const CLOUD="https://script.google.com/macros/s/AKfycbxxcou1HOOavDik0Bmp7etOGdXRW4QZfMoHZMyuDJt-pTFX55le4sG8Wt4gMB9s1qI6wg/exec";
+let S={members:[],trials:[],entries:[],settings:{}};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+
+/* ---- helpers ported from the app (must stay in step with index.html) ---- */
+const longKm =()=>+S.settings.longLapKm||2.3;
+const shortKm=()=>+S.settings.shortLapKm||1.4;
+function courseKm(t,c){if(!t)return 0;
+  if(c!=="short"&&t.special&&+t.special.km)return +t.special.km;
+  return c==="short"?((t.lapsShort||0)*shortKm()):((t.lapsLong||0)*longKm()+(t.longShortLaps||0)*shortKm());}
+function courseName(t,c){if(c==="short")return "Short";return (t&&t.special&&t.special.name)?t.special.name:"Long";}
+function lapTarget(t,c){if(c==="short")return t.lapsShort||2;
+  if(t.special&&+t.special.laps)return +t.special.laps;
+  return (t.lapsLong||2)+(t.longShortLaps||0);}
+const entryTotal=e=>(e.total!=null)?e.total:(e.splits&&e.splits.length?e.splits[e.splits.length-1]:null);
+const entryDone =(e,t)=>e.done===true||(e.splits?e.splits.length:0)>=lapTarget(t,e.course);
+function entrySpeed(e){const t=S.trials.find(x=>x.id===e.trialId);const tot=entryTotal(e);
+  if(e.noSpeed||!t||!tot)return null;const v=courseKm(t,e.course)/(tot/3600);return (v>0&&v<40)?v:null;}
+function fmtClock(s){if(s==null)return"—";const m=Math.floor(s/60),x=s%60;return m+":"+(x<10?"0":"")+x.toFixed(1);}
+function fmtDate(s){const d=new Date(s+"T12:00:00");
+  return d.toLocaleDateString("en-ZA",{weekday:"long",day:"numeric",month:"long"});}
+function memberName(id){const m=S.members.find(x=>x.id===id);return m?((m.first+" "+(m.last||"")).trim()):"—";}
+function crewName(e){return (e.memberIds||[]).map(memberName).join(" & ");}
+const pointsForPosition=p=>p<=9?(11-p):1;
+function seasonFor(d){const m=d.getMonth(),day=d.getDate();
+  if((m===3&&day>=16)||m===4||m===5||m===6||m===7)return "Winter";
+  if((m===10&&day>=5)||m===11||m===0||(m===1&&day<=4))return "Triple S";
+  return "Summer";}
+
+/* Same scoring as the app: ranked within course group, 10-9-…-2 top nine then 1,
+   +3 for beating your own season best, +10 for every 10 trials paddled. */
+function computeStandings(season){
+  const trials=S.trials.filter(t=>t.season===season),tally={};
+  trials.forEach(t=>["long","short"].forEach(course=>{
+    const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
+      .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort((a,b)=>a.total-b.total);
+    grp.forEach((g,i)=>{const pts=pointsForPosition(i+1);
+      (g.e.memberIds||[]).forEach(id=>{
+        const r=tally[id]=tally[id]||{pts:0,best:null,count:0,name:memberName(id),courseBest:{}};
+        r.pts+=pts;r.count++;
+        const cb=r.courseBest[course];
+        if(!t.buoyShort&&cb!=null&&g.total<cb)r.pts+=3;
+        if(cb==null||g.total<cb)r.courseBest[course]=g.total;
+        if(r.best==null||g.total<r.best)r.best=g.total;});});
+  }));
+  Object.values(tally).forEach(r=>{r.pts+=Math.floor(r.count/10)*10;});
+  return Object.entries(tally).map(([id,r])=>({id,...r}))
+    .sort((a,b)=>b.pts-a.pts||(a.best||9e9)-(b.best||9e9));
+}
+
+/* ---------------- latest trial ---------------- */
+function renderLatest(){
+  const done=S.trials.filter(t=>S.entries.some(e=>e.trialId===t.id&&entryDone(e,t)))
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  const t=done[done.length-1];
+  if(!t){$("#latest").innerHTML='<h2>Latest results</h2><div class="meta">No results captured yet — check back after Thursday night.</div>';return;}
+  let h=`<h2>${t.special&&t.special.name?'<span class="star">⭐</span> ':""}${esc(fmtDate(t.date))}</h2>
+    <div class="meta">${esc(t.season)} league${t.timekeeper?" · timekeeper "+esc(t.timekeeper):""}${
+      t.weather?` · ${Math.round(t.weather.temp)}°C, wind ${Math.round(t.weather.wind)} km/h`:""}</div>`;
+  ["long","short"].forEach(course=>{
+    const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
+      .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort((a,b)=>a.total-b.total);
+    if(!grp.length)return;
+    h+=`<div class="grp">${esc(courseName(t,course))} — ${courseKm(t,course).toFixed(1)} km</div>
+      <table><thead><tr><th class="pos">#</th><th>Crew</th><th class="n">Time</th><th class="n">km/h</th></tr></thead><tbody>`;
+    grp.forEach((g,i)=>{const sp=entrySpeed(g.e);
+      h+=`<tr class="p${i+1}"><td class="pos">${i+1}</td>
+        <td>${esc(crewName(g.e))}<span class="boat">${esc(g.e.boat||"")}</span></td>
+        <td class="n">${fmtClock(g.total)}</td><td class="n">${sp?sp.toFixed(1):"—"}</td></tr>`;});
+    h+="</tbody></table>";
+  });
+  $("#latest").innerHTML=h;
+}
+
+/* ---------------- standings ---------------- */
+let SEASON=null;
+function renderStandings(){
+  const seasons=[...new Set(S.trials.map(t=>t.season))];
+  if(!seasons.length){$("#standings").innerHTML="";return;}
+  if(!SEASON||!seasons.includes(SEASON))SEASON=seasonFor(new Date());
+  if(!seasons.includes(SEASON))SEASON=seasons[seasons.length-1];
+  const rows=computeStandings(SEASON);
+  let h=`<h2>League standings</h2><div class="meta">Points are scored within each course group. Top nine get 10-9-8…2, everyone else 1. Beat your own season best: +3. Every 10 trials: +10.</div>
+    <div class="tabs">${seasons.map(s=>`<button data-s="${esc(s)}" class="${s===SEASON?"on":""}">${esc(s)}</button>`).join("")}</div>`;
+  if(!rows.length)h+='<div class="meta">No results in this league yet.</div>';
+  else{
+    h+=`<table><thead><tr><th class="pos">#</th><th>Paddler</th><th class="n">TTs</th><th class="n">Pts</th></tr></thead><tbody>`;
+    rows.forEach((r,i)=>{h+=`<tr class="p${i+1}"><td class="pos">${i+1}</td><td>${esc(r.name)}</td>
+      <td class="n">${r.count}</td><td class="n"><b>${r.pts}</b></td></tr>`;});
+    h+="</tbody></table>";
+  }
+  $("#standings").innerHTML=h;
+  document.querySelectorAll("#standings .tabs button").forEach(b=>b.onclick=()=>{SEASON=b.dataset.s;renderStandings();});
+}
+
+async function load(){
+  try{
+    // sanitised feed; falls back to the full feed until the backend is redeployed
+    let r=await fetch(CLOUD+"?action=public",{redirect:"follow"});
+    let d=await r.json();
+    if(!d||d.error||!d.members){r=await fetch(CLOUD+"?action=data",{redirect:"follow"});d=await r.json();}
+    if(!d||!d.members)throw new Error("no data");
+    S={members:d.members||[],trials:d.trials||[],entries:d.entries||[],settings:d.settings||{}};
+    renderLatest();renderStandings();
+  }catch(e){
+    $("#latest").innerHTML='<h2>Latest results</h2><div class="meta err">Couldn\'t load results just now — please try again in a moment.</div>';
+  }
+}
+load();
+setInterval(load,60000); // refresh while the page is open (handy during a race night)
+</script>
+</body>
+</html>
