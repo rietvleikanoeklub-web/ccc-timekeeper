@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.35.0 Capture screen fits more boats: first names only on each boat row (a K3 is now one line, not
+          three — a shared first name gets a surname initial so nobody's confused), tighter rows, and
+          the course-setup controls collapse once the race starts so the boat list sits near the top.
    0.34.0 Members can be marked "inactive" (left the club / emigrated): results, records and past
           standings keep them, but they drop out of the paddler pickers and the timekeeper lists.
    0.33.0 Privacy: the cloud only returns phone numbers, e-mail addresses, PSA IDs, birthdays and
@@ -192,15 +195,16 @@
   .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:800;letter-spacing:.3px;vertical-align:middle}
   .tag.long{background:#bfdbfe;color:#1e3a8a}
   .tag.short{background:#fed7aa;color:#9a3412}
-  .boatrow{display:flex;align-items:center;gap:10px;padding:12px 10px;border:1px solid var(--line);
-    border-radius:12px;margin-bottom:8px;background:#fff;-webkit-tap-highlight-color:transparent}
+  .boatrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:10px;margin-bottom:5px;background:#fff;-webkit-tap-highlight-color:transparent}
   .boatrow.active{cursor:pointer}
   .boatrow.active:active{background:#ecfdf5;transform:scale(.99)}
   .boatrow .bl{flex:1;min-width:0}
-  .boatrow .bl b{font-size:16px}
+  .boatrow .bl b{font-size:14px;line-height:1.15}
+  .boatrow .bl .small{margin-top:1px}
   .boatrow.done{opacity:.6;background:#f9fafb}
-  .lapbtn{background:var(--green);color:#fff;font-weight:800;border-radius:10px;padding:12px 16px;font-size:15px;flex:0 0 auto;pointer-events:none}
-  .undo{background:#fff;color:var(--muted);border:1px solid var(--line);padding:8px 10px;flex:0 0 auto}
+  .lapbtn{background:var(--green);color:#fff;font-weight:800;border-radius:9px;padding:9px 12px;font-size:13px;flex:0 0 auto;pointer-events:none}
+  .undo{background:#fff;color:var(--muted);border:1px solid var(--line);padding:6px 8px;font-size:13px;flex:0 0 auto}
   .chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}
   .chip{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:9px 13px;font-size:13px;font-weight:700}
   .chip:active{background:#d1fae5;transform:scale(.98)}
@@ -310,8 +314,8 @@
 
   <!-- ===================== CAPTURE ===================== -->
   <section class="view" id="view-capture">
-    <h1>Capture results</h1>
-    <div class="card">
+    <h1 id="capH1">Capture results</h1>
+    <div class="card" id="capTrialCard">
       <div class="row">
         <select id="capTrial" class="grow"></select>
         <button class="sm sec" id="capNew">＋ New race</button>
@@ -330,11 +334,11 @@
         <button id="btnRace" style="max-width:170px">▶ Start race</button>
       </div>
       <div class="tabs" id="capFilter" style="margin-top:14px"></div>
-      <div class="row wrap small muted" style="gap:16px;align-items:center">
+      <div class="row wrap small muted" id="capLapCfg" style="gap:16px;align-items:center">
         <span>Long course: <input id="lapsLong" type="number" min="1" style="width:50px;display:inline-block;padding:5px 6px"> long + <input id="longShortLaps" type="number" min="0" style="width:50px;display:inline-block;padding:5px 6px"> short</span>
         <span>Short course: <input id="lapsShort" type="number" min="1" style="width:50px;display:inline-block;padding:5px 6px"> laps</span>
       </div>
-      <div class="row wrap small" style="gap:8px;align-items:center;margin-top:8px">
+      <div class="row wrap small" id="capSpecCfg" style="gap:8px;align-items:center;margin-top:8px">
         <label style="margin:0;display:flex;align-items:center;gap:6px"><input type="checkbox" id="capSpecial" style="width:auto"> ⭐ Special time trial</label>
         <span id="capSpecialFields" style="display:none">
           <input id="capSpecName" placeholder="e.g. K3 5 km" style="width:120px;display:inline-block;padding:5px 6px">
@@ -348,7 +352,7 @@
 
     <div class="card" id="boatsCard">
       <h2>Boats <span class="muted small" id="capCount"></span></h2>
-      <div class="muted small" style="margin-bottom:10px">Tap a boat as it crosses the line to record a lap. Finished boats drop to the bottom.</div>
+      <div class="muted small" id="capHelp" style="margin-bottom:10px">Tap a boat as it crosses the line to record a lap. Finished boats drop to the bottom.</div>
       <div id="capList"></div>
       <button class="wa" id="capShare" style="width:100%;margin-top:12px">📋 Share results to WhatsApp</button>
       <button class="ghost danger adminonly" id="capClear" style="width:100%;margin-top:8px">🗑 Clear all boats (reset this race)</button>
@@ -465,7 +469,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.34.0";
+const APP_VERSION = "0.35.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -911,6 +915,20 @@ function ensureTrialForTonight(){
 function currentTrial(){const id=(S.capSel)||($("#capTrial")&&$("#capTrial").value);return S.trials.find(t=>t.id===id);}
 function boatSize(b){const n=parseInt((b||"K1").slice(1),10);return n>=1&&n<=3?n:1;} // K2->2, S3->3
 function entryName(e){return (e.memberIds||[]).map(memberName).join(" & ")||"—";}
+/* Compact capture display: first names only (so a K3 fits one line), but if two paddlers
+   in tonight's field share a first name, add a surname initial so they can't be confused. */
+function trialFirstNameDupes(trialId){
+  const byFirst={};
+  S.entries.filter(e=>e.trialId===trialId).forEach(e=>(e.memberIds||[]).forEach(id=>{
+    const m=S.members.find(x=>x.id===id);if(!m)return;
+    const k=(m.first||"").trim().toLowerCase();(byFirst[k]=byFirst[k]||new Set()).add(id);}));
+  const dup=new Set();Object.keys(byFirst).forEach(k=>{if(byFirst[k].size>1)dup.add(k);});
+  return dup;
+}
+function capMemberName(id,dup){const m=S.members.find(x=>x.id===id);if(!m)return"—";
+  const k=(m.first||"").trim().toLowerCase();
+  return m.first+((dup&&dup.has(k)&&m.last)?(" "+m.last[0]):"");}
+function capName(e,dup){return (e.memberIds||[]).map(id=>capMemberName(id,dup)).join(" & ")||"—";}
 function lapTarget(t,course){ // long course = long laps + appended short laps; a special TT sets its own
   if(course==="short")return t.lapsShort||2;
   if(t.special&&+t.special.laps)return +t.special.laps;
@@ -1013,6 +1031,11 @@ function renderCapture(){
   }else{
     btn.textContent="▶ Start race";btn.classList.remove("danger");clk.classList.remove("race-running");clk.textContent="0:00.0";stopClock();
   }
+  // Once the race is under way, collapse the course-setup controls so the boat list sits
+  // near the top and the timekeeper isn't scrolling past settings to reach every boat.
+  const capturing=!!t.startedAt;
+  ["capLapCfg","capSpecCfg","lapSuggest","capWeather","capHelp","capSuggest","capH1","capTrialCard"].forEach(id=>{
+    const el=$("#"+id);if(el)el.style.display=capturing?"none":"";});
   renderEntrants();
 }
 /* how often each paddler has raced — used to list regulars first */
@@ -1080,18 +1103,19 @@ function renderEntrants(){
   const active=list.filter(e=>!entryDone(e,t)).sort((a,b)=>(a.lastTap||0)-(b.lastTap||0));
   const done=list.filter(e=>entryDone(e,t)).sort((a,b)=>entryTotal(a)-entryTotal(b));
   $("#capCount").textContent=`· ${active.length} on water · ${done.length} finished`;
+  const dup=trialFirstNameDupes(t.id);
   const rowActive=e=>{const tgt=lapTarget(t,e.course);const n=e.splits.length;
     const last=n?fmtClock(e.splits[n-1]-(n>1?e.splits[n-2]:0)):null;
     return `<div class="boatrow active" data-lap="${e.id}">
-      <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>
-        <div class="small muted">${courseName(t,e.course)} · Lap ${n}/${tgt}${n?` · last ${last} · total ${fmtClock(entryTotal(e))}`:""}</div></div>
+      <div class="bl"><b>${capName(e,dup)}</b> <span class="tag ${e.course}">${e.boat}</span>
+        <div class="small muted">Lap ${n}/${tgt}${n?` · last ${last} · ${fmtClock(entryTotal(e))}`:` · ${courseName(t,e.course)}`}</div></div>
       ${n?`<button class="undo" data-undo="${e.id}">↩</button>`:""}
       <button class="undo" data-editb="${e.id}">⚙</button>
       <button class="lapbtn">Lap</button></div>`;};
   const rowDone=e=>{const sp=entrySpeed(e),imp=entryImproved(e);
     return `<div class="boatrow done">
-      <div class="bl"><b>${entryName(e)}</b> <span class="tag ${e.course}">${e.boat}</span>${imp?' <span class="pill triples">⬆ PB</span>':""}
-        <div class="small muted">${courseName(t,e.course)} · ${e.splits.length} laps${sp&&sp<40?" · "+fmtSpeed(sp):""}</div></div>
+      <div class="bl"><b>${capName(e,dup)}</b> <span class="tag ${e.course}">${e.boat}</span>${imp?' <span class="pill triples">⬆ PB</span>':""}
+        <div class="small muted">${e.splits.length} laps${sp&&sp<40?" · "+fmtSpeed(sp):""}</div></div>
       <span class="num">${fmtClock(entryTotal(e))}</span>
       <button class="undo" data-editb="${e.id}">⚙</button></div>`;};
   const finishedHdr=done.length?`<div class="small muted" style="margin:6px 0">Finished</div>`:"";
