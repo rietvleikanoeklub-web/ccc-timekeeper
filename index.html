@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.35.1 "Use last week's list" now skips special time trials — a normal long/short night seeds from
+          the last normal trial, not a one-off special's crews.
    0.35.0 Capture screen fits more boats: first names only on each boat row (a K3 is now one line, not
           three — a shared first name gets a surname initial so nobody's confused), tighter rows, and
           the course-setup controls collapse once the race starts so the boat list sits near the top.
@@ -469,7 +471,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.35.0";
+const APP_VERSION = "0.35.1";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -974,7 +976,9 @@ function entryImproved(e){const tr=S.trials.find(t=>t.id===e.trialId);if(!tr||!e
   return (e.memberIds||[]).some(id=>{const pb=priorBest(id,e.course,tr.date);return pb!=null&&tot<pb;});}
 
 /* --- new race / suggestions --- */
-function priorTrialWithEntries(t){return S.trials.filter(x=>x.date<t.date&&S.entries.some(e=>e.trialId===x.id))
+// Most recent PRIOR trial to copy a starting line-up from — skips special time trials, whose
+// one-off crews shouldn't seed a normal long/short night.
+function priorTrialWithEntries(t){return S.trials.filter(x=>x.date<t.date&&!x.special&&S.entries.some(e=>e.trialId===x.id))
   .sort((a,b)=>b.date.localeCompare(a.date))[0];}
 function loadLastWeekInto(t){const p=priorTrialWithEntries(t);if(!p)return 0;let n=0;
   const present=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
