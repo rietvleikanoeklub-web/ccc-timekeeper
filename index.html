@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.37.0 No double-booking: adding a paddler to a boat now MOVES them out of any other boat (and drops
+          the boat if it's left empty) — pickers show everyone, tagging who's already "· in K1". Plus a
+          "➕ Guest / type a name" option in every paddler picker for visitors not in the member list.
    0.36.0 "🧪 Clear test laps & reset clock" button (with confirmation) so a timekeeper can rehearse
           and then wipe the taps without removing the boats. Keeps the line-up, clears clock + laps.
    0.35.1 "Use last week's list" now skips special time trials — a normal long/short night seeds from
@@ -474,7 +477,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.36.0";
+const APP_VERSION = "0.37.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -1075,7 +1078,9 @@ function renderQuickAdd(){
 }
 function addCombo(c){
   const t=currentTrial();if(!t||!c)return;
-  S.entries.push({id:"e"+Date.now().toString(36),trialId:t.id,memberIds:[...c.memberIds],boat:c.boat,course:c.course||"long",splits:[],lastTap:0});
+  const ent={id:"e"+Date.now().toString(36),trialId:t.id,memberIds:[...c.memberIds],boat:c.boat,course:c.course||"long",splits:[],lastTap:0};
+  S.entries.push(ent);
+  dedupeTrialMembers(t.id,ent.id); // never double-book a paddler
   save();renderCapture();toast("Added "+c.memberIds.map(memberName).join(" & "));
 }
 /* how many TTs each paddler has done in the last N weeks — the "usual" crowd */
@@ -1086,20 +1091,54 @@ function recentRank(weeks){
     if(tr&&tr.date>=cut)(e.memberIds||[]).forEach(id=>ids[id]=(ids[id]||0)+1);});
   return ids;
 }
+/* ---- shared paddler-picker helpers (dedupe + guests) ---- */
+// Which boat (if any) a member is already in for this trial — used to warn + to move them.
+function memberBoatIn(trialId,id,exceptEntryId){
+  const e=S.entries.find(x=>x.trialId===trialId&&x.id!==exceptEntryId&&(x.memberIds||[]).includes(id));
+  return e?e.boat:"";}
+// A paddler can only be in ONE boat: strip everyone in `keepId`'s crew from every other boat
+// in the trial, then drop any boat left with no paddlers. Returns how many were moved.
+function dedupeTrialMembers(trialId,keepId){
+  const keep=S.entries.find(e=>e.id===keepId);if(!keep)return 0;
+  const ids=new Set(keep.memberIds||[]);let moved=0;
+  S.entries.forEach(e=>{if(e.trialId!==trialId||e.id===keepId)return;
+    const before=(e.memberIds||[]).length;
+    e.memberIds=(e.memberIds||[]).filter(id=>!ids.has(id));
+    moved+=before-e.memberIds.length;});
+  S.entries=S.entries.filter(e=>!(e.trialId===trialId&&(e.memberIds||[]).length===0));
+  return moved;}
+// Create a one-off guest paddler typed in by the timekeeper (flagged so they don't clutter later races).
+function addGuest(name){const parts=name.trim().split(/\s+/);const first=parts.shift()||name;
+  const m={id:"g"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),first,last:parts.join(" "),boat:"K1",guest:true};
+  S.members.push(m);return m.id;}
+const GUEST_OPT='<option value="__guest__">➕ Guest / type a name…</option>';
+function paddlerOptionHtml(m,selId,trialId,exceptEntryId){
+  const boat=memberBoatIn(trialId,m.id,exceptEntryId);
+  const hint=(boat&&m.id!==selId)?` · in ${boat}`:"";
+  return `<option value="${m.id}"${m.id===selId?" selected":""}>${memberLabel(m.id)}${hint}</option>`;}
+// guests only appear in the picker for the trial they were created in (or if currently selected)
+function pickablePaddlers(trialId,selId){
+  return activeMembers().filter(m=>!m.guest||m.id===selId||S.entries.some(e=>e.trialId===trialId&&(e.memberIds||[]).includes(m.id)));}
+
 function rebuildPaddlerSelects(){
   const t=currentTrial();if(!t)return;
   const n=boatSize($("#capBoat").value);
   const keep=$$(".capP").map(s=>s.value); // preserve selections across rebuilds
+  const keepG=$$(".capGuest").map(x=>x.value); // preserve half-typed guest names too
   const q=(($("#capPadSearch")&&$("#capPadSearch").value)||"").trim().toLowerCase();
-  const used=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
   const rec=recentRank(8);
-  const sorted=activeMembers().filter(m=>!used.has(m.id))
-    .sort((a,b)=>(rec[b.id]||0)-(rec[a.id]||0)||memberFull(a).localeCompare(memberFull(b))); // recent TT paddlers first, then A–Z
   const match=m=>!q||(memberFull(m)+" "+(m.alias||"")).toLowerCase().includes(q);
-  const opts=sel=>'<option value="">— paddler —</option>'+sorted.filter(m=>match(m)||m.id===sel)
-    .map(m=>`<option value="${m.id}" ${m.id===sel?"selected":""}>${memberLabel(m.id)}</option>`).join("");
+  const opts=sel=>'<option value="">— paddler —</option>'
+    +pickablePaddlers(t.id,sel).filter(m=>match(m)||m.id===sel)
+      .sort((a,b)=>(rec[b.id]||0)-(rec[a.id]||0)||memberFull(a).localeCompare(memberFull(b)))
+      .map(m=>paddlerOptionHtml(m,sel,t.id,null)).join("")+GUEST_OPT;
   $("#capPaddlers").innerHTML=Array.from({length:n},(_,i)=>
-    `<label>${n>1?"Paddler "+(i+1):"Paddler"}</label><select class="capP" data-i="${i}">${opts(keep[i]||"")}</select>`).join("");
+    `<label>${n>1?"Paddler "+(i+1):"Paddler"}</label>`
+    +`<select class="capP" data-i="${i}">${opts(keep[i]||"")}</select>`
+    +`<input class="capGuest" data-i="${i}" placeholder="Guest name" style="display:${keep[i]==="__guest__"?"block":"none"};margin-top:6px" value="${(keepG[i]||"").replace(/"/g,"&quot;")}">`).join("");
+  $$("#capPaddlers .capP").forEach(s=>s.addEventListener("change",()=>{
+    const gi=$(`#capPaddlers .capGuest[data-i="${s.dataset.i}"]`);
+    if(gi){gi.style.display=s.value==="__guest__"?"block":"none";if(s.value==="__guest__")gi.focus();}}));
 }
 function renderEntrants(){
   const t=currentTrial();if(!t)return;
@@ -1176,14 +1215,16 @@ function clearRace(){
 function editBoat(eid){
   const t=currentTrial();const e=S.entries.find(x=>x.id===eid);if(!e)return;
   const padOpts=(selId)=>{
-    const used=new Set(S.entries.filter(x=>x.trialId===t.id&&x.id!==e.id).flatMap(x=>x.memberIds));
     const rank=paddlerRank();
-    return '<option value="">— paddler —</option>'+S.members.filter(m=>(!used.has(m.id)&&!m.inactive)||m.id===selId)
+    // show everyone (a paddler already in another boat is tagged and simply moved here on save)
+    return '<option value="">— paddler —</option>'+pickablePaddlers(t.id,selId)
       .sort((a,b)=>(rank[b.id]||0)-(rank[a.id]||0)||(a.first+a.last).localeCompare(b.first+b.last))
-      .map(m=>`<option value="${m.id}" ${m.id===selId?"selected":""}>${memberLabel(m.id)}</option>`).join("");
+      .map(m=>paddlerOptionHtml(m,selId,t.id,e.id)).join("")+GUEST_OPT;
   };
   const padFields=(boat,crew)=>{const n=boatSize(boat);
-    return Array.from({length:n},(_,i)=>`<label>${n>1?"Paddler "+(i+1):"Paddler"}</label><select class="ebP" data-i="${i}">${padOpts(crew[i]||"")}</select>`).join("");};
+    return Array.from({length:n},(_,i)=>`<label>${n>1?"Paddler "+(i+1):"Paddler"}</label>`
+      +`<select class="ebP" data-i="${i}">${padOpts(crew[i]||"")}</select>`
+      +`<input class="ebGuest" data-i="${i}" placeholder="Guest name" style="display:none;margin-top:6px">`).join("");};
   const splits=e.splits&&e.splits.length?e.splits:(e.total!=null?[e.total]:[]);
   const timeFields=splits.length?`<label class="muted" style="margin-top:8px">Lap times (mm:ss.t — last is the total)</label>`
     +splits.map((s,i)=>`<input class="ebT" data-i="${i}" value="${fmtClock(s)}" inputmode="decimal" style="margin-bottom:6px">`).join(""):"";
@@ -1195,19 +1236,29 @@ function editBoat(eid){
     ${timeFields}
     <button class="ghost danger" id="ebRemove" style="width:100%;margin-top:12px">Remove this boat</button>`;
   openModal("Edit boat",body,()=>{
-    const boat=$("#ebBoat").value, course=$("#ebCourse").value, ids=$$(".ebP").map(s=>s.value);
-    if(ids.some(x=>!x)){toast("Pick all "+boatSize(boat)+" paddler(s)");return false;}
-    if(new Set(ids).size!==ids.length){toast("Same paddler twice");return false;}
+    const boat=$("#ebBoat").value, course=$("#ebCourse").value;
+    const raw=$$("#ebPaddlers .ebP").map(s=>{
+      if(s.value==="__guest__"){const gi=$(`#ebPaddlers .ebGuest[data-i="${s.dataset.i}"]`);
+        return {guest:true,name:(gi&&gi.value||"").trim()};}
+      return {guest:false,id:s.value};});
+    if(raw.some(r=>r.guest?!r.name:!r.id)){toast("Fill in all "+boatSize(boat)+" paddler(s)");return false;}
+    const picked=raw.filter(r=>!r.guest).map(r=>r.id);
+    if(new Set(picked).size!==picked.length){toast("Same paddler twice");return false;}
     if($$(".ebT").length){const vals=$$(".ebT").map(i=>parseTime(i.value));
       if(vals.some(v=>v==null)){toast("Bad time — use mm:ss or mm:ss.t");return false;}
       for(let i=1;i<vals.length;i++)if(vals[i]<vals[i-1]){toast("Lap times out of order");return false;}
       e.splits=vals; if(e.total!=null)e.total=vals[vals.length-1];}
+    const ids=raw.map(r=>r.guest?addGuest(r.name):r.id);
     e.boat=boat; e.course=course; e.memberIds=ids; e.lastTap=Date.now();
-    ids.forEach(id=>{const m=S.members.find(x=>x.id===id);if(m)m.boat=boat;});
+    ids.forEach(id=>{const m=S.members.find(x=>x.id===id);if(m&&!m.guest)m.boat=boat;});
+    dedupeTrialMembers(t.id,e.id); // moving a paddler in here removes them from their old boat
     save();rebuildPaddlerSelects();renderCapture();toast("Boat updated");
   },"Save");
   // changing boat type adds/removes paddler slots
   $("#ebBoat").onchange=()=>{const cur=$$(".ebP").map(s=>s.value);$("#ebPaddlers").innerHTML=padFields($("#ebBoat").value,cur);};
+  $("#ebPaddlers").addEventListener("change",ev=>{if(!ev.target.classList.contains("ebP"))return;
+    const gi=$(`#ebPaddlers .ebGuest[data-i="${ev.target.dataset.i}"]`);
+    if(gi){gi.style.display=ev.target.value==="__guest__"?"block":"none";if(ev.target.value==="__guest__")gi.focus();}});
   const rm=$("#ebRemove");if(rm)rm.onclick=()=>{if(confirm("Remove "+entryName(e)+"?")){S.entries=S.entries.filter(x=>x.id!==e.id);save();rebuildPaddlerSelects();closeModal();renderCapture();}};
 }
 $("#capTrial").addEventListener("change",e=>{S.capSel=e.target.value;save();renderCapture();});
@@ -1233,13 +1284,21 @@ $("#capPadSearch").addEventListener("input",rebuildPaddlerSelects);
 $("#capAdd").addEventListener("click",()=>{
   const t=currentTrial();if(!t){toast("Start a race first");return;}
   const boat=$("#capBoat").value,course=$("#capCourse").value;
-  const ids=$$(".capP").map(s=>s.value);
-  if(ids.some(x=>!x)){toast("Pick all "+boatSize(boat)+" paddler(s)");return;}
-  if(new Set(ids).size!==ids.length){toast("Same paddler picked twice");return;}
-  ids.forEach(id=>{const m=S.members.find(x=>x.id===id);if(m)m.boat=boat;});
-  S.entries.push({id:"e"+Date.now().toString(36),trialId:t.id,memberIds:ids,boat,course,splits:[],lastTap:0});
+  const raw=$$("#capPaddlers .capP").map(s=>{
+    if(s.value==="__guest__"){const gi=$(`#capPaddlers .capGuest[data-i="${s.dataset.i}"]`);
+      return {guest:true,name:(gi&&gi.value||"").trim()};}
+    return {guest:false,id:s.value};});
+  if(raw.some(r=>r.guest?!r.name:!r.id)){toast("Fill in all "+boatSize(boat)+" paddler(s)");return;}
+  const picked=raw.filter(r=>!r.guest).map(r=>r.id);
+  if(new Set(picked).size!==picked.length){toast("Same paddler picked twice");return;}
+  const ids=raw.map(r=>r.guest?addGuest(r.name):r.id); // create guests only after validation
+  ids.forEach(id=>{const m=S.members.find(x=>x.id===id);if(m&&!m.guest)m.boat=boat;});
+  const ent={id:"e"+Date.now().toString(36),trialId:t.id,memberIds:ids,boat,course,splits:[],lastTap:0};
+  S.entries.push(ent);
+  const moved=dedupeTrialMembers(t.id,ent.id); // a paddler joins one boat = leaves any other
   $("#capPadSearch").value="";
-  save();rebuildPaddlerSelects();renderEntrants();toast("Added "+entryName({memberIds:ids}));
+  save();rebuildPaddlerSelects();renderEntrants();
+  toast("Added "+entryName(ent)+(moved?" · moved from another boat":""));
 });
 /* --- results message for WhatsApp --- */
 function buildResults(t){
@@ -1431,7 +1490,7 @@ function renderMembers(){
   const list=S.members.filter(m=>((m.first+" "+(m.last||"")+" "+(m.alias||"")+" "+m.reg)).toLowerCase().includes(q))
     .sort((a,b)=>(a.first+a.last).localeCompare(b.first+b.last));
   $("#memList").innerHTML=list.length?list.map(m=>`<div class="duty" style="${m.inactive?"opacity:.5":""}">
-      <span class="grow" data-stats="${m.id}" style="cursor:pointer"><b>${memberFull(m)}</b>${m.alias?` <span class="alias">“${m.alias}”</span>`:""}${m.inactive?' <span class="boat">inactive</span>':""}
+      <span class="grow" data-stats="${m.id}" style="cursor:pointer"><b>${memberFull(m)}</b>${m.alias?` <span class="alias">“${m.alias}”</span>`:""}${m.inactive?' <span class="boat">inactive</span>':""}${m.guest?' <span class="boat">guest</span>':""}
       <span class="small muted">${m.boat||""}${m.sex?" · "+m.sex:""}${memberAge(m)!==""?" · "+memberAge(m)+"y":""}${m.reg?" · PSA "+m.reg:""}${m.phone?" · "+m.phone:""}${m.email?" · ✉":""}</span></span>
       <button class="sm ghost adminonly" data-edit="${m.id}">edit</button>
     </div>`).join(""):'<div class="empty">No members.</div>';
