@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.36.0 "🧪 Clear test laps & reset clock" button (with confirmation) so a timekeeper can rehearse
+          and then wipe the taps without removing the boats. Keeps the line-up, clears clock + laps.
    0.35.1 "Use last week's list" now skips special time trials — a normal long/short night seeds from
           the last normal trial, not a one-off special's crews.
    0.35.0 Capture screen fits more boats: first names only on each boat row (a K3 is now one line, not
@@ -357,6 +359,7 @@
       <div class="muted small" id="capHelp" style="margin-bottom:10px">Tap a boat as it crosses the line to record a lap. Finished boats drop to the bottom.</div>
       <div id="capList"></div>
       <button class="wa" id="capShare" style="width:100%;margin-top:12px">📋 Share results to WhatsApp</button>
+      <button class="ghost" id="capClearTest" style="width:100%;margin-top:8px">🧪 Clear test laps &amp; reset clock (keep boats)</button>
       <button class="ghost danger adminonly" id="capClear" style="width:100%;margin-top:8px">🗑 Clear all boats (reset this race)</button>
     </div>
 
@@ -471,7 +474,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.35.1";
+const APP_VERSION = "0.36.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -1148,6 +1151,18 @@ function removeEntry(eid){
   if(!confirm("Remove "+entryName(e)+" from the race?"))return;
   S.entries=S.entries.filter(x=>x.id!==eid);save();rebuildPaddlerSelects();renderCapture();
 }
+// Wipe a test run but KEEP the boats: clears every lap/time and resets the clock, so a
+// timekeeper can rehearse and then start the real race without re-adding the line-up.
+function clearTest(){
+  const t=currentTrial();if(!t)return;
+  const ents=S.entries.filter(e=>e.trialId===t.id);
+  const recorded=!!t.startedAt||ents.some(e=>(e.splits&&e.splits.length)||e.total!=null||e.done);
+  if(!recorded){toast("Nothing to clear — no laps or clock yet");return;}
+  if(!confirm("Clear all test laps and reset the clock?\n\nThe "+ents.length+" boat(s) stay on the list. Real results from other races are not affected."))return;
+  ents.forEach(e=>{e.splits=[];delete e.total;delete e.done;e.lastTap=0;});
+  t.startedAt=null;
+  save();rebuildPaddlerSelects();renderCapture();toast("Test cleared — ready for the real race 🏁");
+}
 function clearRace(){
   const t=currentTrial();if(!t)return;
   const n=S.entries.filter(e=>e.trialId===t.id).length;
@@ -1247,6 +1262,7 @@ function buildResults(t){
 $("#capShare").addEventListener("click",()=>{const t=currentTrial();if(!t){toast("No race");return;}
   if(!S.entries.some(e=>e.trialId===t.id&&entryDone(e,t))){toast("No finishers yet");return;}
   shareModal("Post results",buildResults(t),"results");});
+$("#capClearTest").addEventListener("click",clearTest);
 $("#capClear").addEventListener("click",clearRace);
 /* race clock ticker */
 function startClock(){stopClock();_clock=setInterval(()=>{const t=currentTrial();const el=$("#raceClock");
