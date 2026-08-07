@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.38.0 "Order only" results: a trial flagged orderOnly (clock failed / times unreliable) shows the
+          finishing ORDER with no times or speeds — on the capture list, the WhatsApp message and the
+          public results page. Positions still score league points as normal.
    0.37.0 No double-booking: adding a paddler to a boat now MOVES them out of any other boat (and drops
           the boat if it's left empty) — pickers show everyone, tagging who's already "· in K1". Plus a
           "➕ Guest / type a name" option in every paddler picker for visitors not in the member list.
@@ -477,7 +480,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.37.0";
+const APP_VERSION = "0.38.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -1158,11 +1161,12 @@ function renderEntrants(){
       ${n?`<button class="undo" data-undo="${e.id}">↩</button>`:""}
       <button class="undo" data-editb="${e.id}">⚙</button>
       <button class="lapbtn">Lap</button></div>`;};
-  const rowDone=e=>{const sp=entrySpeed(e),imp=entryImproved(e);
+  const orderOnly=!!t.orderOnly;
+  const rowDone=e=>{const sp=orderOnly?null:entrySpeed(e),imp=!orderOnly&&entryImproved(e);
     return `<div class="boatrow done">
       <div class="bl"><b>${capName(e,dup)}</b> <span class="tag ${e.course}">${e.boat}</span>${imp?' <span class="pill triples">⬆ PB</span>':""}
-        <div class="small muted">${e.splits.length} laps${sp&&sp<40?" · "+fmtSpeed(sp):""}</div></div>
-      <span class="num">${fmtClock(entryTotal(e))}</span>
+        <div class="small muted">${orderOnly?"finish order":e.splits.length+" laps"+(sp&&sp<40?" · "+fmtSpeed(sp):"")}</div></div>
+      <span class="num">${orderOnly?"":fmtClock(entryTotal(e))}</span>
       <button class="undo" data-editb="${e.id}">⚙</button></div>`;};
   const finishedHdr=done.length?`<div class="small muted" style="margin:6px 0">Finished</div>`:"";
   $("#capList").innerHTML=(active.map(rowActive).join("")||(done.length?"":'<div class="empty">No boats yet — add them below, or load last week’s list.</div>'))+finishedHdr+done.map(rowDone).join("");
@@ -1304,15 +1308,17 @@ $("#capAdd").addEventListener("click",()=>{
 function buildResults(t){
   const lines=[`🏆 *CCC Time Trial — ${fmtDate(t.date)}* (${t.season})`];
   if(t.weather)lines.push("🌤 "+weatherLine(t.weather));
+  const orderOnly=!!t.orderOnly; // finishing ORDER captured but no valid times (e.g. clock failed)
   ["long","short"].forEach(course=>{
     const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
       .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
     if(!g.length)return;
-    const km=courseKm(t,course);
+    const km=orderOnly?0:courseKm(t,course);
     lines.push("\n*"+courseName(t,course).toUpperCase()+(course==="short"?" COURSE":(t.special?"":" COURSE"))+(km?` (${km.toFixed(1)} km)`:"")+"*");
-    g.forEach((x,i)=>{const sp=entrySpeed(x.e),imp=entryImproved(x.e);
-      lines.push(`${i+1}. ${entryName(x.e)} (${x.e.boat}) — ${fmtClock(x.total)}${sp?" · "+sp.toFixed(1)+"km/h":""}${imp?" ⬆PB":""}`);});
+    g.forEach((x,i)=>{const sp=orderOnly?null:entrySpeed(x.e),imp=!orderOnly&&entryImproved(x.e);
+      lines.push(`${i+1}. ${entryName(x.e)} (${x.e.boat})${orderOnly?"":` — ${fmtClock(x.total)}`}${sp?" · "+sp.toFixed(1)+"km/h":""}${imp?" ⬆PB":""}`);});
   });
+  if(orderOnly)lines.push("\n_(finishing order — clock not run, no times)_");
   const dnf=S.entries.filter(e=>e.trialId===t.id&&!entryDone(e,t)).length;
   if(dnf)lines.push(`\n(${dnf} boat${dnf>1?"s":""} did not finish)`);
   lines.push("\nWell done all! 🛶");

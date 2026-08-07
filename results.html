@@ -122,18 +122,20 @@ function renderLatest(){
   let h=`<h2>${t.special&&t.special.name?'<span class="star">⭐</span> ':""}${esc(fmtDate(t.date))}</h2>
     <div class="meta">${esc(t.season)} league${t.timekeeper?" · timekeeper "+esc(t.timekeeper):""}${
       t.weather?` · ${Math.round(t.weather.temp)}°C, wind ${Math.round(t.weather.wind)} km/h`:""}</div>`;
+  const orderOnly=!!t.orderOnly;
   ["long","short"].forEach(course=>{
     const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
       .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort((a,b)=>a.total-b.total);
     if(!grp.length)return;
-    h+=`<div class="grp">${esc(courseName(t,course))} — ${courseKm(t,course).toFixed(1)} km</div>
-      <table><thead><tr><th class="pos">#</th><th>Crew</th><th class="n">Time</th><th class="n">km/h</th></tr></thead><tbody>`;
-    grp.forEach((g,i)=>{const sp=entrySpeed(g.e);
+    h+=`<div class="grp">${esc(courseName(t,course))}${orderOnly?"":" — "+courseKm(t,course).toFixed(1)+" km"}</div>`
+      +`<table><thead><tr><th class="pos">#</th><th>Crew</th>${orderOnly?"":'<th class="n">Time</th><th class="n">km/h</th>'}</tr></thead><tbody>`;
+    grp.forEach((g,i)=>{const sp=orderOnly?null:entrySpeed(g.e);
       h+=`<tr class="p${i+1}"><td class="pos">${i+1}</td>
-        <td>${esc(crewName(g.e))}<span class="boat">${esc(g.e.boat||"")}</span></td>
-        <td class="n">${fmtClock(g.total)}</td><td class="n">${sp?sp.toFixed(1):"—"}</td></tr>`;});
+        <td>${esc(crewName(g.e))}<span class="boat">${esc(g.e.boat||"")}</span></td>`
+        +(orderOnly?"":`<td class="n">${fmtClock(g.total)}</td><td class="n">${sp?sp.toFixed(1):"—"}</td>`)+`</tr>`;});
     h+="</tbody></table>";
   });
+  if(orderOnly)h+=`<div class="meta">Finishing order — clock not run, no times recorded.</div>`;
   $("#latest").innerHTML=h;
 }
 
