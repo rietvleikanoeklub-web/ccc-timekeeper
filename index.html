@@ -28,6 +28,10 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.39.0 SYNC FIX: replaced whole-document last-write-wins (which let any device overwrite everyone
+          else's edits) with a 3-way merge (base/local/remote). A device can now only change records
+          it actually touched — roster swaps, results and member edits from different devices merge
+          instead of clobbering. Also re-syncs on foreground/focus so an open app stays current.
    0.38.0 "Order only" results: a trial flagged orderOnly (clock failed / times unreliable) shows the
           finishing ORDER with no times or speeds — on the capture list, the WhatsApp message and the
           public results page. Positions still score league points as normal.
@@ -480,7 +484,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.38.0";
+const APP_VERSION = "0.39.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -608,8 +612,9 @@ function save(){S.updatedAt=Date.now();S.rev=(S.rev||0)+1;persistLocal();schedul
 
 /* ---------------- cloud sync (last-write-wins by updatedAt; one device captures per trial) ---------------- */
 let _pushTimer=null, _syncing=false;
-function setCloud(url,token){CLOUD_URL=url.trim();CLOUD_TOKEN=(token||"").trim();
-  localStorage.setItem("ccc_tk_cloud_url",CLOUD_URL);localStorage.setItem("ccc_tk_cloud_token",CLOUD_TOKEN);}
+function setCloud(url,token){const changed=(url.trim()!==CLOUD_URL);CLOUD_URL=url.trim();CLOUD_TOKEN=(token||"").trim();
+  localStorage.setItem("ccc_tk_cloud_url",CLOUD_URL);localStorage.setItem("ccc_tk_cloud_token",CLOUD_TOKEN);
+  if(changed){_base=null;try{localStorage.removeItem("ccc_tk_base");}catch(e){}}}
 // The PIN rides along on reads: the backend only returns contact details + PINs to a caller
 // that knows one. Without it we still get names/times, flagged `sanitised`.
 function knownPin(){const s=S.settings||{};return s.adminPin||s.appPin||localStorage.getItem("ccc_tk_pin")||"";}
@@ -623,42 +628,110 @@ function setReadOnly(v){_readOnly=v;const b=$("#syncRO");if(b)b.style.display=v?
 async function cloudPost(data){ // text/plain avoids a CORS preflight Apps Script can't answer
   const r=await fetch(CLOUD_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},
     body:JSON.stringify({token:CLOUD_TOKEN,data})});return r.json();}
-function schedulePush(){if(!CLOUD_URL)return;clearTimeout(_pushTimer);_pushTimer=setTimeout(pushCloud,1400);}
-async function pushCloud(){if(!CLOUD_URL||_syncing)return;
-  // Never write back a document we only received in sanitised form — it would blank out
-  // everyone's contact details and the PINs. Unlock with the club PIN and syncing resumes.
-  if(_readOnly){renderSyncInfo();return;}
+function schedulePush(){if(!CLOUD_URL)return;clearTimeout(_pushTimer);_pushTimer=setTimeout(syncCloud,1400);}
+
+/* ============================================================= MERGE SYNC
+   Whole-document last-write-wins used to let any device overwrite everyone else's edits.
+   Now every sync is a 3-way merge (base = the cloud state our local edits were made against,
+   local = this device, remote = current cloud). A record is only taken from a side that
+   actually CHANGED it vs the base — so a device can never clobber a record it didn't touch.
+   True conflicts (same record edited on two devices) fall back to last-write-wins by doc time. */
+const BASE_KEY="ccc_tk_base";
+let _base=null; try{_base=JSON.parse(localStorage.getItem(BASE_KEY)||"null");}catch(e){}
+function setBase(doc){_base=doc;try{localStorage.setItem(BASE_KEY,JSON.stringify(doc));}catch(e){}}
+function stable(v){ // stable stringify (sorted keys) so key-order differences aren't seen as edits
+  if(v===null||typeof v!=="object")return JSON.stringify(v);
+  if(Array.isArray(v))return "["+v.map(stable).join(",")+"]";
+  return "{"+Object.keys(v).sort().map(k=>JSON.stringify(k)+":"+stable(v[k])).join(",")+"}";}
+function eqRec(a,b){return stable(a)===stable(b);}
+function idx(arr,kf){const o={};(arr||[]).forEach(x=>{o[kf(x)]=x;});return o;}
+// merge one keyed collection (array). pick the side that changed vs base; conflict -> preferLocal.
+function mergeKeyed(base,local,remote,kf,preferLocal){
+  const b=idx(base,kf),l=idx(local,kf),r=idx(remote,kf);
+  const keys=new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)]);
+  const out=[];
+  keys.forEach(k=>{
+    const bv=b[k],lv=l[k],rv=r[k];
+    const lC=!eqRec(lv,bv),rC=!eqRec(rv,bv);
+    let pick;
+    if(lC&&!rC)pick=lv; else if(rC&&!lC)pick=rv; else if(!lC&&!rC)pick=bv; else pick=preferLocal?lv:rv;
+    if(pick!==undefined)out.push(pick);
+  });
+  return out;
+}
+function mergeMap(base,local,remote,preferLocal){
+  base=base||{};local=local||{};remote=remote||{};
+  const keys=new Set([...Object.keys(base),...Object.keys(local),...Object.keys(remote)]);
+  const out={};
+  keys.forEach(k=>{const bv=base[k],lv=local[k],rv=remote[k];
+    const lC=!eqRec(lv,bv),rC=!eqRec(rv,bv);
+    let pick; if(lC&&!rC)pick=lv; else if(rC&&!lC)pick=rv; else if(!lC&&!rC)pick=bv; else pick=preferLocal?lv:rv;
+    if(pick!==undefined)out[k]=pick;});
+  return out;
+}
+function mergeDocs(base,local,remote){
+  base=base||{};
+  const preferLocal=(local.updatedAt||0)>=(remote.updatedAt||0);
+  const out={
+    members:mergeKeyed(base.members,local.members,remote.members,m=>m.id,preferLocal),
+    trials: mergeKeyed(base.trials, local.trials, remote.trials, t=>t.id,preferLocal),
+    entries:mergeKeyed(base.entries,local.entries,remote.entries,e=>e.id,preferLocal),
+    roster: mergeKeyed(base.roster, local.roster, remote.roster, r=>r.date,preferLocal),
+    courseChoice:mergeMap(base.courseChoice,local.courseChoice,remote.courseChoice,preferLocal),
+    settings:mergeMap(base.settings,local.settings,remote.settings,preferLocal),
+    updatedAt:Math.max(local.updatedAt||0,remote.updatedAt||0),
+    rev:Math.max(local.rev||0,remote.rev||0)
+  };
+  // never let a merge blank a PIN that some side still holds
+  if(!out.settings.appPin)out.settings.appPin=(local.settings&&local.settings.appPin)||(remote.settings&&remote.settings.appPin)||"";
+  if(!out.settings.adminPin)out.settings.adminPin=(local.settings&&local.settings.adminPin)||(remote.settings&&remote.settings.adminPin)||"";
+  return normalize(out);
+}
+function eqDoc(a,b){ // compare ignoring volatile fields
+  const strip=d=>{const c=JSON.parse(JSON.stringify(d));delete c.updatedAt;delete c.rev;if(c.settings)delete c.settings.lastSync;return stable(c);};
+  return strip(a)===strip(b);
+}
+// One unified sync: pull remote, 3-way merge with local, push the merge if it adds anything.
+async function syncCloud(announce){if(!CLOUD_URL||_syncing)return;
   _syncing=true;renderSyncInfo();
   try{
-    // don't let a device with a blank PIN overwrite one already set in the cloud
-    if(!(S.settings.appPin&&S.settings.adminPin)){
-      try{const c=await cloudGet("data");if(c&&!c.error&&c.settings){
-        if(!S.settings.appPin&&c.settings.appPin)S.settings.appPin=c.settings.appPin;
-        if(!S.settings.adminPin&&c.settings.adminPin)S.settings.adminPin=c.settings.adminPin;
-        if((!S.settings.admins||!S.settings.admins.length)&&c.settings.admins)S.settings.admins=c.settings.admins;
-      }}catch(e){}
+    const remote=await cloudGet("data");
+    if(!remote||remote.error){if(announce)toast("Couldn't reach cloud");return;}
+    setReadOnly(!!remote.sanitised);
+    if(remote.sanitised){ // unauthenticated viewer: adopt names/times, keep local pins+contacts, never push
+      if((remote.updatedAt||0)>(S.updatedAt||0)){
+        const kPin=S.settings.appPin,kAdm=S.settings.adminPin,kAdmins=S.settings.admins,keep=idx(S.members,m=>m.id);
+        S=normalize(remote);
+        S.members.forEach(m=>{const o=keep[m.id];if(o)["phone","email","reg","birthday"].forEach(k=>{if(o[k]&&!m[k])m[k]=o[k];});});
+        if(!S.settings.appPin&&kPin)S.settings.appPin=kPin;
+        if(!S.settings.adminPin&&kAdm)S.settings.adminPin=kAdm;
+        if((!S.settings.admins||!S.settings.admins.length)&&kAdmins)S.settings.admins=kAdmins;
+        persistLocal();renderAll();maybeLock();
+      }
+      if(announce)toast("Synced (view only)");return;
     }
-    const res=await cloudPost(S);if(res&&res.ok){S.settings.lastSync=Date.now();persistLocal();}
-  }catch(e){/* offline — will retry on next save */}
-  finally{_syncing=false;renderSyncInfo();}}
-async function pullCloud(announce){if(!CLOUD_URL)return;_syncing=true;renderSyncInfo();
-  try{const cloud=await cloudGet("data");
-    if(cloud&&!cloud.error)setReadOnly(!!cloud.sanitised);
-    if(cloud&&!cloud.error&&(cloud.updatedAt||0)>(S.updatedAt||0)){
-      const kPin=S.settings&&S.settings.appPin,kAdm=S.settings&&S.settings.adminPin,kAdmins=S.settings&&S.settings.admins;
-      // a sanitised pull carries no contact details — keep the ones we already hold
-      const keep={};if(cloud.sanitised)(S.members||[]).forEach(m=>{keep[m.id]=m;});
-      S=normalize(cloud);
-      if(cloud.sanitised)S.members.forEach(m=>{const o=keep[m.id];if(!o)return;
-        ["phone","email","reg","birthday"].forEach(k=>{if(o[k]&&!m[k])m[k]=o[k];});});
-      // sticky access settings: a blank cloud value must not wipe a locally-set PIN
-      if(!S.settings.appPin&&kPin)S.settings.appPin=kPin;
-      if(!S.settings.adminPin&&kAdm)S.settings.adminPin=kAdm;
-      if((!S.settings.admins||!S.settings.admins.length)&&kAdmins)S.settings.admins=kAdmins;
-      persistLocal();renderAll();maybeLock();if(announce)toast("Synced from cloud");}
+    if(!_base){ // first authed sync on this device: adopt the cloud, don't push our seed over it
+      S=normalize(remote);setBase(JSON.parse(JSON.stringify(remote)));persistLocal();renderAll();maybeLock();
+      if(announce)toast("Synced from cloud");return;
+    }
+    const merged=mergeDocs(_base,S,remote);
+    const addsToRemote=!eqDoc(merged,remote); // does the merge carry local edits the cloud lacks?
+    S=merged;persistLocal();renderAll();maybeLock();
+    if(addsToRemote){
+      merged.updatedAt=Date.now();
+      const res=await cloudPost(merged);
+      if(res&&res.ok){setBase(JSON.parse(JSON.stringify(merged)));S.settings.lastSync=Date.now();persistLocal();}
+      else setBase(JSON.parse(JSON.stringify(remote)));
+    }else{
+      setBase(JSON.parse(JSON.stringify(remote)));S.settings.lastSync=Date.now();persistLocal();
+    }
+    if(announce)toast("Synced ✓");
   }catch(e){if(announce)toast("Couldn't reach cloud");}
   finally{_syncing=false;renderSyncInfo();}}
-async function syncNow(){await pullCloud(true);await pushCloud();}
+// back-compat aliases for existing callers
+async function pushCloud(){return syncCloud(false);}
+async function pullCloud(announce){return syncCloud(announce);}
+async function syncNow(){return syncCloud(true);}
 
 /* ---------------- live member feed from the Bar Tab ---------------- */
 async function pullBarTabMembers(){
@@ -1856,7 +1929,10 @@ $("#verTag").textContent="v"+APP_VERSION;
 standSeason=seasonFor(new Date());if(standSeason==="Triple S")standSeason="Triple S";
 renderAll();
 applyAdminUI();maybeLock();
-if(CLOUD_URL) pullCloud(false); // sync down on startup
+if(CLOUD_URL) syncCloud(false); // merge with cloud on startup
+// keep an open device fresh: re-sync whenever it's brought back to the foreground
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&CLOUD_URL)syncCloud(false);});
+window.addEventListener("focus",()=>{if(CLOUD_URL)syncCloud(false);});
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{
   navigator.serviceWorker.register("sw.js").catch(()=>{});
   let pending=false;
