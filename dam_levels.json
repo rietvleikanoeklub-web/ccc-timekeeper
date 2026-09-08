@@ -2,16 +2,16 @@
   "dams": [
     {
       "station": "A2R004",
-      "fsc_mcm": 12.25,
-      "volume_mcm": 12.23,
-      "pct_last_year": 99.5,
-      "pct_last_week": 99.7,
-      "pct_full": 98.9,
-      "report_date": "2026-06-29",
+      "fsc_mcm": 12.3,
+      "volume_mcm": 11.32,
+      "pct_last_year": 86.6,
+      "pct_last_week": 76.5,
+      "pct_full": 92.0,
+      "report_date": "2026-09-07",
       "source": "https://www.dws.gov.za/hydrology/Weekly/ProvinceWeek.aspx?region=G",
-      "fetched_utc": "2026-06-29T14:00:03+00:00"
+      "fetched_utc": "2026-09-08T19:04:14+00:00"
     }
   ],
   "errors": [],
-  "note": "Seed reading. Overwritten by dam_levels.py --json on the DWS weekly schedule. The app never scrapes DWS itself."
+  "note": "Updated from DWS weekly report 2026-09-07. Overwritten by dam_levels.py --json on the weekly cron."
 }
