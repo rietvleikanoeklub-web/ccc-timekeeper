@@ -85,3 +85,23 @@ timestamps / tombstones.
 - Money pool (R20 lucky draw) tracking — include?
 - Exact Summer long-vs-short scheduling rule (who/when decides 10km vs 5km).
 - Triple S separate-league scoring + Mixed-K2 team league (designed in rules digest, not yet coded).
+
+## Dam level (trial conditions)
+
+Each trial records the Rietvlei dam level for history, next to the weather. The app reads
+`dam_levels.json` (same origin — it never scrapes DWS itself) and snapshots the reading onto a
+trial when the race starts; a timekeeper can also enter/adjust it by hand on the Capture tab.
+
+`dam_levels.py` is the DWS weekly-report scraper (unaudited, updates Mondays, station A2R004 =
+Rietvlei). Keep `dam_levels.json` fresh from a cron job on the server — e.g. Mon 12:00, Mon 16:00,
+Tue 09:00 SAST (three polls cover DWS's variable upload time; the primary key dedupes):
+
+```
+cd /path/to/ccc-timekeeper
+python3 dam_levels.py --stations A2R004 --db dam_history.sqlite --json > dam_levels.json
+git commit -am "dam level $(date +%F)" && git push
+```
+
+If the scraper can't produce a row (`not found in <url>`), DWS changed the report layout — update
+`ROW_RE` in `dam_levels.py`. The app keeps showing the last stored reading (flagged stale after 14
+days), never a blank or zero.

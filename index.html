@@ -28,6 +28,10 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.40.0 Dam level in the trial conditions (for history): reads dam_levels.json (DWS weekly report for
+          Rietvlei, scraped separately — the app never polls DWS), shows it on Tonight + Capture, and
+          snapshots it onto each trial when the race starts. Manual entry + edit, staleness flagged,
+          >100% (spilling) shown as-is, never blank on failure. Appears in the WhatsApp result + results page.
    0.39.0 SYNC FIX: replaced whole-document last-write-wins (which let any device overwrite everyone
           else's edits) with a 3-way merge (base/local/remote). A device can now only change records
           it actually touched — roster swaps, results and member edits from different devices merge
@@ -276,6 +280,7 @@
       <div class="kv"><span class="k">Season</span><span class="v" id="tnSeason"></span></div>
       <div class="kv"><span class="k">Sunset (Pretoria approx)</span><span class="v" id="tnSunset"></span></div>
       <div class="kv"><span class="k">Conditions now</span><span class="v" id="tnWeather">—</span></div>
+      <div class="kv"><span class="k">Dam level</span><span class="v" id="tnDam">—</span></div>
       <div class="kv"><span class="k">Timekeeper on duty</span><span class="v" id="tnTk"></span></div>
       <div id="tnNote"></div>
     </div>
@@ -362,6 +367,10 @@
       </div>
       <div class="small" id="lapSuggest" style="margin-top:6px"></div>
       <div class="small muted" id="capWeather" style="margin-top:4px"></div>
+      <div class="row wrap small muted" id="capDamRow" style="gap:6px;align-items:center;margin-top:4px">
+        <span id="capDam"></span>
+        <button class="sm sec" id="capDamEdit" style="padding:3px 8px">Dam level…</button>
+      </div>
     </div>
 
     <div class="card" id="boatsCard">
@@ -484,7 +493,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.39.0";
+const APP_VERSION = "0.40.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -823,6 +832,10 @@ function renderTonight(){
   $("#tnSunset").textContent=sunset+"  ·  off water before dark";
   $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
   currentWeather().then(w=>{const el=$("#tnWeather");if(el)el.textContent=weatherLine(w);}).catch(()=>{});
+  {const el=$("#tnDam");if(el){const show=dl=>{const age=damAgeDays(dl),stale=age!=null&&age>14;
+     el.textContent=dl?damLine(dl,{full:true}).replace(/^🌊 /,""):"no reading yet — enter on Capture";
+     el.style.opacity=stale?"0.55":"1";};
+   if(_damLatest)show(_damLatest); else fetchDam().then(show).catch(()=>show(null));}}
 
   let note="";
   const tTon=S.trials.find(x=>x.date===key);
@@ -979,6 +992,41 @@ async function currentWeather(){ // cached 10 min so Tonight doesn't hammer the 
   if(_wx&&Date.now()-_wxAt<600000)return _wx;
   _wx=await fetchWeather();_wxAt=Date.now();return _wx;}
 
+/* ---------------- Rietvlei dam level ----------------
+   Source: DWS weekly reservoir report (unaudited), station A2R004, updated Mondays.
+   The app NEVER scrapes DWS — the dam_levels.py scraper writes dam_levels.json (same origin)
+   on its own schedule and we just read it. Reading is up to a week old by design, so the
+   report_date is always shown; >14 days old is flagged stale; a value over 100% (spilling)
+   is shown as-is. On any failure we keep the last reading, never blank/zero. */
+const DAM_STATION="A2R004", DAM_NAME="Rietvlei";
+let _damLatest=null;
+async function fetchDam(){ // pull the latest scraped reading for Rietvlei
+  try{const r=await fetch("./dam_levels.json?t="+Date.now());const j=await r.json();
+    const row=(j.dams||[]).find(d=>d.station===DAM_STATION);
+    if(row){_damLatest=Object.assign({name:DAM_NAME},row);}
+  }catch(e){/* keep whatever we had; never blank */}
+  return _damLatest;}
+function damAgeDays(dl){if(!dl||!dl.report_date)return null;
+  const d=new Date(dl.report_date+"T12:00:00");if(isNaN(d))return null;
+  return Math.floor((Date.now()-d.getTime())/86400000);}
+function fmtDamDate(s){const d=new Date(s+"T12:00:00");return isNaN(d)?s:d.toLocaleDateString("en-ZA",{day:"numeric",month:"short"});}
+// one-line summary; opts.full adds volume + week delta
+function damLine(dl,opts){opts=opts||{};if(!dl||dl.pct_full==null)return"";
+  const age=damAgeDays(dl),stale=age!=null&&age>14;
+  let s=`🌊 ${dl.name||DAM_NAME} ${(+dl.pct_full).toFixed(1)}% full`;
+  if(opts.full&&dl.volume_mcm!=null&&dl.fsc_mcm!=null)s+=` · ${(+dl.volume_mcm).toFixed(2)}/${(+dl.fsc_mcm).toFixed(2)} Mm³`;
+  if(dl.report_date)s+=` · wk ${fmtDamDate(dl.report_date)}`;
+  if(opts.full&&dl.pct_last_week!=null){const dd=(+dl.pct_full)-(+dl.pct_last_week);s+=` (${dd>=0?"+":""}${dd.toFixed(1)}%)`;}
+  if(dl.manual)s+=" · entered by hand"; else s+=" · DWS, unaudited";
+  if(stale)s+=" · data may be stale";
+  return s;}
+// snapshot to store on a trial (history) — a compact copy of the current reading
+function damSnapshot(dl){if(!dl||dl.pct_full==null)return null;
+  return {station:dl.station||DAM_STATION,name:dl.name||DAM_NAME,pct_full:+dl.pct_full,
+    volume_mcm:dl.volume_mcm!=null?+dl.volume_mcm:null,fsc_mcm:dl.fsc_mcm!=null?+dl.fsc_mcm:null,
+    pct_last_week:dl.pct_last_week!=null?+dl.pct_last_week:null,report_date:dl.report_date||null,
+    manual:!!dl.manual};}
+
 /* ============================================================= CAPTURE (live lap timer) */
 let capFilter="ALL", _clock=null;
 function defaultLaps(season){
@@ -1098,6 +1146,8 @@ function renderCapture(){
       +((sg.long!==(t.lapsLong||2)||sg.longShort!==(t.longShortLaps||0))?` <button class="sm sec" id="lapApply" style="padding:4px 8px">Use suggestion</button>`:"");
   if($("#lapApply"))$("#lapApply").onclick=()=>{t.lapsLong=sg.long;t.longShortLaps=sg.longShort;save();renderCapture();toast("Long course set to "+courseLabel(sg.long,sg.longShort));};
   $("#capWeather").textContent=t.weather?("🌤 Conditions at the gun: "+weatherLine(t.weather)):"";
+  {const dl=t.damLevel||_damLatest;const el=$("#capDam");
+   if(el)el.textContent=dl?damLine(dl,{full:true})+(t.damLevel?" — recorded for this trial":" — will be recorded when you start"):"🌊 Dam level: none yet";}
   // suggestion banner
   const mine=S.entries.filter(e=>e.trialId===t.id);
   const prior=priorTrialWithEntries(t);
@@ -1341,7 +1391,9 @@ function editBoat(eid){
 $("#capTrial").addEventListener("change",e=>{S.capSel=e.target.value;save();renderCapture();});
 $("#btnRace").addEventListener("click",()=>{
   const t=currentTrial();if(!t)return;
-  if(!t.startedAt){t.startedAt=Date.now();save();renderCapture();toast("Race started 🏁");
+  if(!t.startedAt){t.startedAt=Date.now();
+    if(!t.damLevel&&_damLatest){t.damLevel=damSnapshot(_damLatest);} // stamp the dam reading for history
+    save();renderCapture();toast("Race started 🏁");
     fetchWeather().then(w=>{const tt=S.trials.find(x=>x.id===t.id); // stamp conditions at the gun
       if(tt&&!tt.weather){tt.weather=w;save();renderCapture();}}).catch(()=>{});}
   else if(confirm("Reset the race clock? Lap times already recorded are kept.")){t.startedAt=null;save();renderCapture();}
@@ -1381,6 +1433,7 @@ $("#capAdd").addEventListener("click",()=>{
 function buildResults(t){
   const lines=[`🏆 *CCC Time Trial — ${fmtDate(t.date)}* (${t.season})`];
   if(t.weather)lines.push("🌤 "+weatherLine(t.weather));
+  if(t.damLevel)lines.push(damLine(t.damLevel,{full:true}));
   const orderOnly=!!t.orderOnly; // finishing ORDER captured but no valid times (e.g. clock failed)
   ["long","short"].forEach(course=>{
     const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
@@ -1400,6 +1453,25 @@ function buildResults(t){
 $("#capShare").addEventListener("click",()=>{const t=currentTrial();if(!t){toast("No race");return;}
   if(!S.entries.some(e=>e.trialId===t.id&&entryDone(e,t))){toast("No finishers yet");return;}
   shareModal("Post results",buildResults(t),"results");});
+$("#capDamEdit").addEventListener("click",()=>{
+  const t=currentTrial();if(!t){toast("Start a race first");return;}
+  const cur=t.damLevel||_damLatest||{};
+  const today=ymd(new Date());
+  const body=`<p class="small muted">Rietvlei storage for the record. Auto-filled from the DWS weekly
+      report when available (<b>${_damLatest?damLine(_damLatest).replace(/^🌊 /,""):"no automatic reading yet"}</b>).
+      Enter it by hand if you have a fresher figure.</p>
+    <label>% full</label><input id="dmPct" type="number" step="0.1" inputmode="decimal" value="${cur.pct_full!=null?cur.pct_full:""}">
+    <label style="margin-top:8px">Reading date</label><input id="dmDate" type="date" value="${cur.report_date||today}">
+    ${t.damLevel?'<button class="ghost danger" id="dmClear" style="width:100%;margin-top:12px">Remove recorded dam level</button>':""}`;
+  openModal("🌊 Dam level",body,()=>{
+    const pct=parseFloat($("#dmPct").value);
+    if(isNaN(pct)){toast("Enter the % full");return false;}
+    t.damLevel={station:DAM_STATION,name:DAM_NAME,pct_full:pct,report_date:$("#dmDate").value||today,
+      volume_mcm:null,fsc_mcm:null,pct_last_week:null,manual:true};
+    save();renderCapture();toast("Dam level recorded");
+  },"Save");
+  const c=$("#dmClear");if(c)c.onclick=()=>{delete t.damLevel;save();renderCapture();closeModal();toast("Dam level cleared");};
+});
 $("#capClearTest").addEventListener("click",clearTest);
 $("#capClear").addEventListener("click",clearRace);
 /* race clock ticker */
@@ -1929,6 +2001,7 @@ $("#verTag").textContent="v"+APP_VERSION;
 standSeason=seasonFor(new Date());if(standSeason==="Triple S")standSeason="Triple S";
 renderAll();
 applyAdminUI();maybeLock();
+fetchDam().then(()=>{if($("#view-tonight")&&$("#view-tonight").classList.contains("on"))renderTonight();}).catch(()=>{}); // load dam level (same-origin, never scrapes DWS)
 if(CLOUD_URL) syncCloud(false); // merge with cloud on startup
 // keep an open device fresh: re-sync whenever it's brought back to the foreground
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&CLOUD_URL)syncCloud(false);});

@@ -122,6 +122,10 @@ function renderLatest(){
   let h=`<h2>${t.special&&t.special.name?'<span class="star">⭐</span> ':""}${esc(fmtDate(t.date))}</h2>
     <div class="meta">${esc(t.season)} league${t.timekeeper?" · timekeeper "+esc(t.timekeeper):""}${
       t.weather?` · ${Math.round(t.weather.temp)}°C, wind ${Math.round(t.weather.wind)} km/h`:""}</div>`;
+  if(t.damLevel&&t.damLevel.pct_full!=null){const dl=t.damLevel;
+    h+=`<div class="meta">🌊 ${esc(dl.name||"Rietvlei")} ${(+dl.pct_full).toFixed(1)}% full`
+      +(dl.volume_mcm!=null&&dl.fsc_mcm!=null?` · ${(+dl.volume_mcm).toFixed(2)}/${(+dl.fsc_mcm).toFixed(2)} Mm³`:"")
+      +(dl.report_date?` · wk ${esc(dl.report_date)}`:"")+(dl.manual?"":" · DWS, unaudited")+`</div>`;}
   const orderOnly=!!t.orderOnly;
   ["long","short"].forEach(course=>{
     const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
