@@ -48,18 +48,26 @@ HEADERS = {
 }
 TIMEOUT = 30
 
-# A weekly row looks like:  A2R004  Rietvlei  Hennops  1  G  CW  TSH  12.25  12.23  99.5  99.7  98.9
-NUM = r"(-?\d+(?:[.,]\d+)?)"
-ROW_RE = re.compile(
-    r"\b(?P<station>[A-Z]\d[A-Z]\d{3})\b"          # station code
-    r".*?"                                          # reservoir, river, WMA, prov, WSS, district
-    r"(?P<fsc>\d+(?:\.\d+)?)\s+"                    # full supply capacity 10^6 m3
-    r"#?(?P<vol>\d+(?:\.\d+)?)\s+"                  # water in dam 10^6 m3
-    r"#?(?P<last_year>\d+(?:\.\d+)?)\s+"            # last year % full
-    r"#?(?P<last_week>\d+(?:\.\d+)?)\s+"            # last week % full
-    r"#?(?P<today>\d+(?:\.\d+)?)",                  # today % full
-    re.DOTALL,
-)
+# DWS dropped the station code from ProvinceWeek.aspx (seen 2026-09), so rows are keyed by dam NAME.
+# Map each station to the dam name as printed on the page.
+STATION_NAME = {
+    "A2R004": "Rietvlei Dam",
+    "A2R009": "Roodeplaat Dam",
+    "A2R002": "Bon Accord Dam",
+    "C1R001": "Vaal Dam",
+    "C8R004": "Sol Plaatje Dam",   # a.k.a. Saulspoort
+}
+# 2026 layout (one row):  <Dam> <River> [Photo] Indicators <FSC> <This Week%> <Last Week%> <Last Year%>
+# There is no separate "water in dam" column any more; volume is derived FSC x This Week %.
+# A leading "#" on a figure means "latest available data" — strip it.
+NUM = r"#?(-?\d+(?:\.\d+)?)"
+
+def _row_re(name):
+    return re.compile(
+        re.escape(name) + r"\b.*?Indicators\s+"    # skip river + optional "Photo" cell
+        + NUM + r"\s+" + NUM + r"\s+" + NUM + r"\s+" + NUM,
+        re.DOTALL,
+    )
 DATE_RE = re.compile(r"(20\d{2})[-/]?(\d{2})[-/]?(\d{2})")
 
 
@@ -88,31 +96,30 @@ def text_from_pdf(content):
 
 
 def parse_station(text, station):
-    """Pull one station's row out of the report text."""
-    window = None
-    for m in re.finditer(re.escape(station), text):
-        window = text[m.start(): m.start() + 400]
-        break
-    if not window:
+    """Pull one station's row out of the report text, keyed by dam name."""
+    name = STATION_NAME.get(station)
+    if not name:
         return None
-    m = ROW_RE.search(window)
+    m0 = re.search(re.escape(name), text)      # anchor at the dam's own row
+    if not m0:
+        return None
+    window = text[m0.start(): m0.start() + 300]  # bounded so .*? can't run into the next dam
+    m = _row_re(name).search(window)
     if not m:
         return None
-    d = m.groupdict()
-    if d["station"] != station:
-        return None
+    fsc, this_week, last_week, last_year = (float(g) for g in m.groups())
     return {
         "station": station,
-        "fsc_mcm": float(d["fsc"]),
-        "volume_mcm": float(d["vol"]),
-        "pct_last_year": float(d["last_year"]),
-        "pct_last_week": float(d["last_week"]),
-        "pct_full": float(d["today"]),
+        "fsc_mcm": fsc,
+        "volume_mcm": round(fsc * this_week / 100.0, 2),  # derived: no volume column any more
+        "pct_last_year": last_year,
+        "pct_last_week": last_week,
+        "pct_full": this_week,
     }
 
 
 def parse_report_date(text):
-    m = re.search(r"Weekly State of the Reservoirs on\s*(\d{4})-(\d{2})-(\d{2})", text)
+    m = re.search(r"State of (?:the )?(?:Dams|Reservoirs) on\s*(\d{4})-(\d{2})-(\d{2})", text)
     if m:
         return "-".join(m.groups())
     m = DATE_RE.search(text)

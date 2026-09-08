@@ -9,9 +9,8 @@
       "pct_full": 92.0,
       "report_date": "2026-09-07",
       "source": "https://www.dws.gov.za/hydrology/Weekly/ProvinceWeek.aspx?region=G",
-      "fetched_utc": "2026-09-08T19:04:14+00:00"
+      "fetched_utc": "2026-09-08T19:11:25+00:00"
     }
   ],
-  "errors": [],
-  "note": "Updated from DWS weekly report 2026-09-07. Overwritten by dam_levels.py --json on the weekly cron."
+  "errors": []
 }
