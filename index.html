@@ -28,6 +28,9 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.41.0 "Partial" boats (completed fewer laps than the course) keep their real time but rank AFTER
+          every full finisher, in the capture list, results, standings and stats — a short run can't
+          out-place a full-distance boat.
    0.40.1 Test trials (season "Test" / test flag) are walled off from the public results page and the
           league — a practice run can never show publicly or score points.
    0.40.0 Dam level in the trial conditions (for history): reads dam_levels.json (DWS weekly report for
@@ -495,7 +498,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.40.1";
+const APP_VERSION = "0.41.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -1068,6 +1071,11 @@ function lapTarget(t,course){ // long course = long laps + appended short laps; 
   if(t.special&&+t.special.laps)return +t.special.laps;
   return (t.lapsLong||2)+(t.longShortLaps||0);}
 function entryTotal(e){return (e.total!=null)?e.total:(e.splits&&e.splits.length?e.splits[e.splits.length-1]:null);}
+// "partial" = completed fewer laps than the course (a shorter distance). Keep the real time, but
+// rank them AFTER every full finisher so a short run can't out-place a full-distance boat.
+function _pt(e){return e&&e.partial?1:0;}
+function cmpEntry(a,b){return _pt(a)-_pt(b)||entryTotal(a)-entryTotal(b);}   // arrays of entries
+function cmpET(a,b){return _pt(a.e)-_pt(b.e)||a.total-b.total;}              // arrays of {e,total}
 function entryDone(e,t){return e.done===true || (e.splits?e.splits.length:0)>=lapTarget(t,e.course);} // imported results set total+done
 function raceElapsed(t){return t&&t.startedAt?(Date.now()-t.startedAt)/1000:0;}
 function longKmVal(){return +S.settings.longLapKm||2.3;}
@@ -1275,7 +1283,7 @@ function renderEntrants(){
   let list=S.entries.filter(e=>e.trialId===t.id);
   if(capFilter!=="ALL")list=list.filter(e=>e.course===capFilter);
   const active=list.filter(e=>!entryDone(e,t)).sort((a,b)=>(a.lastTap||0)-(b.lastTap||0));
-  const done=list.filter(e=>entryDone(e,t)).sort((a,b)=>entryTotal(a)-entryTotal(b));
+  const done=list.filter(e=>entryDone(e,t)).sort(cmpEntry);
   $("#capCount").textContent=`· ${active.length} on water · ${done.length} finished`;
   const dup=trialFirstNameDupes(t.id);
   const rowActive=e=>{const tgt=lapTarget(t,e.course);const n=e.splits.length;
@@ -1439,7 +1447,7 @@ function buildResults(t){
   const orderOnly=!!t.orderOnly; // finishing ORDER captured but no valid times (e.g. clock failed)
   ["long","short"].forEach(course=>{
     const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
-      .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
+      .map(e=>({e,total:entryTotal(e)})).sort(cmpET);
     if(!g.length)return;
     const km=orderOnly?0:courseKm(t,course);
     lines.push("\n*"+courseName(t,course).toUpperCase()+(course==="short"?" COURSE":(t.special?"":" COURSE"))+(km?` (${km.toFixed(1)} km)`:"")+"*");
@@ -1496,7 +1504,7 @@ function computeStandings(season,boatFilter,courseFilter){
     ["long","short"].forEach(course=>{
       if(courseFilter&&courseFilter!=="ALL"&&course!==courseFilter)return;
       const group=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
-        .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
+        .map(e=>({e,total:entryTotal(e)})).sort(cmpET);
       group.forEach((g,i)=>{
         const r=g.e;if(!boatMatch(r.boat,boatFilter))return;
         const pts=pointsForPosition(i+1);
@@ -1531,7 +1539,7 @@ function computeMixedStandings(courseFilter){
     ["long","short"].forEach(course=>{
       if(courseFilter&&courseFilter!=="ALL"&&course!==courseFilter)return;
       const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t)&&isMixedK2(e))
-        .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
+        .map(e=>({e,total:entryTotal(e)})).sort(cmpET);
       g.forEach((x,i)=>{ // rank among MIXED crews only (5th K2 overall can still be 1st mixed)
         const key=[...x.e.memberIds].sort().join("|");
         const tm=teams[key]=teams[key]||{pts:0,n:0,best:null,name:x.e.memberIds.map(memberName).join(" & "),ids:x.e.memberIds};
@@ -1588,7 +1596,7 @@ function buildAOAs(season){
   S.trials.filter(t=>t.season===season).sort((a,b)=>a.date.localeCompare(b.date)).forEach(t=>{
     ["long","short"].forEach(course=>{
       const g=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
-        .map(e=>({e,total:entryTotal(e)})).sort((a,b)=>a.total-b.total);
+        .map(e=>({e,total:entryTotal(e)})).sort(cmpET);
       g.forEach((x,i)=>{const sp=entrySpeed(x.e);
         resAOA.push([t.date,course,i+1,x.e.memberIds.map(memberName).join(" & "),x.e.boat,fmtClock(x.total),sp?sp.toFixed(1):"",entryImproved(x.e)?"yes":"",pointsForPosition(i+1)]);});
     });
@@ -1747,7 +1755,7 @@ function memberStats(mid){
     const tot=entryTotal(e);if(tot==null)return;
     const sp=entrySpeed(e);
     const grp=S.entries.filter(x=>x.trialId===t.id&&x.course===e.course&&entryDone(x,t))
-      .sort((a,b)=>entryTotal(a)-entryTotal(b));
+      .sort(cmpEntry);
     st.results.push({date:t.date,course:e.course,boat:e.boat,total:tot,speed:sp,
       pos:grp.findIndex(x=>x.id===e.id)+1,of:grp.length,pb:entryImproved(e)});
     if(entryImproved(e))st.pbCount++;

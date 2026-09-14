@@ -78,6 +78,7 @@ function lapTarget(t,c){if(c==="short")return t.lapsShort||2;
   if(t.special&&+t.special.laps)return +t.special.laps;
   return (t.lapsLong||2)+(t.longShortLaps||0);}
 const entryTotal=e=>(e.total!=null)?e.total:(e.splits&&e.splits.length?e.splits[e.splits.length-1]:null);
+const cmpET=(a,b)=>((a.e&&a.e.partial?1:0)-(b.e&&b.e.partial?1:0))||(a.total-b.total); // partial boats rank last
 const entryDone =(e,t)=>e.done===true||(e.splits?e.splits.length:0)>=lapTarget(t,e.course);
 function entrySpeed(e){const t=S.trials.find(x=>x.id===e.trialId);const tot=entryTotal(e);
   if(e.noSpeed||!t||!tot)return null;const v=courseKm(t,e.course)/(tot/3600);return (v>0&&v<40)?v:null;}
@@ -98,7 +99,7 @@ function computeStandings(season){
   const trials=S.trials.filter(t=>t.season===season),tally={};
   trials.forEach(t=>["long","short"].forEach(course=>{
     const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
-      .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort((a,b)=>a.total-b.total);
+      .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort(cmpET);
     grp.forEach((g,i)=>{const pts=pointsForPosition(i+1);
       (g.e.memberIds||[]).forEach(id=>{
         const r=tally[id]=tally[id]||{pts:0,best:null,count:0,name:memberName(id),courseBest:{}};
@@ -129,7 +130,7 @@ function renderLatest(){
   const orderOnly=!!t.orderOnly;
   ["long","short"].forEach(course=>{
     const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
-      .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort((a,b)=>a.total-b.total);
+      .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort(cmpET);
     if(!grp.length)return;
     h+=`<div class="grp">${esc(courseName(t,course))}${orderOnly?"":" — "+courseKm(t,course).toFixed(1)+" km"}</div>`
       +`<table><thead><tr><th class="pos">#</th><th>Crew</th>${orderOnly?"":'<th class="n">Time</th><th class="n">km/h</th>'}</tr></thead><tbody>`;
