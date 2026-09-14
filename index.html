@@ -28,6 +28,8 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.40.1 Test trials (season "Test" / test flag) are walled off from the public results page and the
+          league — a practice run can never show publicly or score points.
    0.40.0 Dam level in the trial conditions (for history): reads dam_levels.json (DWS weekly report for
           Rietvlei, scraped separately — the app never polls DWS), shows it on Tonight + Capture, and
           snapshots it onto each trial when the race starts. Manual entry + edit, staleness flagged,
@@ -493,7 +495,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.40.0";
+const APP_VERSION = "0.40.1";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 

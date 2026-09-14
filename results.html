@@ -115,7 +115,7 @@ function computeStandings(season){
 
 /* ---------------- latest trial ---------------- */
 function renderLatest(){
-  const done=S.trials.filter(t=>S.entries.some(e=>e.trialId===t.id&&entryDone(e,t)))
+  const done=S.trials.filter(t=>!t.test&&t.season!=="Test"&&S.entries.some(e=>e.trialId===t.id&&entryDone(e,t)))
     .sort((a,b)=>a.date.localeCompare(b.date));
   const t=done[done.length-1];
   if(!t){$("#latest").innerHTML='<h2>Latest results</h2><div class="meta">No results captured yet — check back after Thursday night.</div>';return;}
@@ -146,7 +146,7 @@ function renderLatest(){
 /* ---------------- standings ---------------- */
 let SEASON=null;
 function renderStandings(){
-  const seasons=[...new Set(S.trials.map(t=>t.season))];
+  const seasons=[...new Set(S.trials.filter(t=>!t.test&&t.season!=="Test").map(t=>t.season))];
   if(!seasons.length){$("#standings").innerHTML="";return;}
   if(!SEASON||!seasons.includes(SEASON))SEASON=seasonFor(new Date());
   if(!seasons.includes(SEASON))SEASON=seasons[seasons.length-1];
