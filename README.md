@@ -93,15 +93,25 @@ Each trial records the Rietvlei dam level for history, next to the weather. The 
 trial when the race starts; a timekeeper can also enter/adjust it by hand on the Capture tab.
 
 `dam_levels.py` is the DWS weekly-report scraper (unaudited, updates Mondays, station A2R004 =
-Rietvlei). Keep `dam_levels.json` fresh from a cron job on the server — e.g. Mon 12:00, Mon 16:00,
-Tue 09:00 SAST (three polls cover DWS's variable upload time; the primary key dedupes):
+Rietvlei). `update_dam_levels.sh` wraps it: fetch, and push `dam_levels.json` **only when the reading
+changes**.
+
+**DWS geo-blocks non-SA / cloud IPs (HTTP 403).** GitHub Actions and AWS eu-west-1 both get 403, so
+the refresh must run from a South-African connection. It is installed as a **Mac launchd agent**
+(`~/Library/LaunchAgents/za.co.ccc.damlevels.plist`) firing Mon 12:00, Mon 16:00, Tue 09:00 SAST;
+macOS runs a missed job on the next wake. Manage it with:
 
 ```
-cd /path/to/ccc-timekeeper
-python3 dam_levels.py --stations A2R004 --db dam_history.sqlite --json > dam_levels.json
-git commit -am "dam level $(date +%F)" && git push
+launchctl list | grep damlevels                 # is it registered?
+launchctl kickstart -k gui/$(id -u)/za.co.ccc.damlevels   # run now
+launchctl unload ~/Library/LaunchAgents/za.co.ccc.damlevels.plist   # stop it
+tail ~/.ccc-dam/dam.log                          # what it did
 ```
 
-If the scraper can't produce a row (`not found in <url>`), DWS changed the report layout — update
-`ROW_RE` in `dam_levels.py`. The app keeps showing the last stored reading (flagged stale after 14
-days), never a blank or zero.
+To make it laptop-independent, run the same `update_dam_levels.sh` from an always-on **South-African**
+host (e.g. AWS af-south-1 / a SA VPS) on the same schedule. `.github/workflows/dam-levels.yml` is kept
+but its schedule is disabled (GitHub's runners are blocked); re-enable it only on a SA self-hosted runner.
+
+If the scraper can't produce a row (`not found in <url>`), DWS changed the report layout — update the
+name/column parsing in `dam_levels.py`. The app keeps showing the last stored reading (flagged stale
+after 14 days), never a blank or zero.
