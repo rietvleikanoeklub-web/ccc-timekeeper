@@ -56,8 +56,10 @@ jobs:
               print("changed=false")
           PY
           if [ ! -s dam_levels.new.json ] || ! python3 -c "import json,sys;sys.exit(0 if json.load(open('dam_levels.new.json')).get('dams') else 1)"; then
-            echo "::warning::DWS scraper produced no rows — last reading kept. Check scraper.err (regex may need updating)."
-            [ -s scraper.err ] && cat scraper.err
+            echo "::warning::DWS scraper produced no rows — last reading kept."
+            echo "--- scraper errors (from JSON) ---"
+            python3 -c "import json;print('\n'.join(json.load(open('dam_levels.new.json')).get('errors',[]) or ['(none)']))" 2>/dev/null || echo "(could not read new.json)"
+            echo "--- stderr ---"; [ -s scraper.err ] && cat scraper.err || echo "(empty)"
           fi
           rm -f dam_levels.new.json
 
