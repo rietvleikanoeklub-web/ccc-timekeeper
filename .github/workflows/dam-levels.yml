@@ -1,0 +1,71 @@
+name: Update dam level
+
+# Refreshes dam_levels.json from the DWS weekly reservoir report. Runs on GitHub's
+# servers — no laptop or private server required. DWS publishes on Mondays (sometimes
+# slips to Tuesday), so we poll three times; a commit is only made when the reading
+# actually changes, so repeat polls of the same week are no-ops.
+
+on:
+  schedule:
+    - cron: '0 10 * * 1'   # Mon 12:00 SAST (UTC+2)
+    - cron: '0 14 * * 1'   # Mon 16:00 SAST
+    - cron: '0 7 * * 2'    # Tue 09:00 SAST
+  workflow_dispatch: {}     # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: write           # allow the job to commit dam_levels.json back to the repo
+
+concurrency:
+  group: dam-levels
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install scraper dependencies
+        run: pip install --quiet beautifulsoup4 lxml pdfplumber requests
+
+      - name: Fetch DWS reading (write only if changed)
+        id: fetch
+        run: |
+          python3 dam_levels.py --stations A2R004 --json > dam_levels.new.json 2> scraper.err || true
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          try:
+              new = json.load(open('dam_levels.new.json'))
+          except Exception:
+              new = {"dams": []}
+          old = json.load(open('dam_levels.json')) if os.path.exists('dam_levels.json') else {"dams": []}
+          # compare the reading itself, ignoring the fetched_utc timestamp
+          key = lambda d: [(x.get('station'), x.get('report_date'), x.get('pct_full'),
+                            x.get('volume_mcm'), x.get('pct_last_week'),
+                            x.get('pct_last_year'), x.get('fsc_mcm')) for x in d.get('dams', [])]
+          if new.get('dams') and key(new) != key(old):
+              json.dump(new, open('dam_levels.json', 'w'), indent=2)
+              open('dam_levels.json', 'a').write('\n')
+              print("changed=true")
+          else:
+              # no dams (scraper couldn't parse) or same week -> keep the last good file
+              print("changed=false")
+          PY
+          if [ ! -s dam_levels.new.json ] || ! python3 -c "import json,sys;sys.exit(0 if json.load(open('dam_levels.new.json')).get('dams') else 1)"; then
+            echo "::warning::DWS scraper produced no rows — last reading kept. Check scraper.err (regex may need updating)."
+            [ -s scraper.err ] && cat scraper.err
+          fi
+          rm -f dam_levels.new.json
+
+      - name: Commit the new reading
+        if: steps.fetch.outputs.changed == 'true'
+        run: |
+          git config user.name "dam-level-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dam_levels.json
+          git commit -m "dam level $(date +%F) (auto)"
+          git push
