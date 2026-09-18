@@ -3,13 +3,13 @@
     {
       "station": "A2R004",
       "fsc_mcm": 12.3,
-      "volume_mcm": 11.32,
-      "pct_last_year": 86.6,
-      "pct_last_week": 76.5,
-      "pct_full": 92.0,
-      "report_date": "2026-09-07",
+      "volume_mcm": 12.32,
+      "pct_last_year": 86.9,
+      "pct_last_week": 92.0,
+      "pct_full": 100.2,
+      "report_date": "2026-09-14",
       "source": "https://www.dws.gov.za/hydrology/Weekly/ProvinceWeek.aspx?region=G",
-      "fetched_utc": "2026-09-08T19:11:25+00:00"
+      "fetched_utc": "2026-09-18T06:42:05+00:00"
     }
   ],
   "errors": []
