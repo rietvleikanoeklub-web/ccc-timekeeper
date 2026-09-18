@@ -5,12 +5,16 @@ name: Update dam level
 # slips to Tuesday), so we poll three times; a commit is only made when the reading
 # actually changes, so repeat polls of the same week are no-ops.
 
+# NOTE: the weekly schedule is DISABLED because DWS geo-blocks GitHub's runners (HTTP 403 —
+# it only serves South-African IPs). The live refresh runs from a SA connection instead
+# (see update_dam_levels.sh + the Mac launchd agent, or a SA-based cron). This workflow is
+# kept for manual runs and for the day a SA-based self-hosted runner is available.
 on:
-  schedule:
-    - cron: '0 10 * * 1'   # Mon 12:00 SAST (UTC+2)
-    - cron: '0 14 * * 1'   # Mon 16:00 SAST
-    - cron: '0 7 * * 2'    # Tue 09:00 SAST
-  workflow_dispatch: {}     # lets you run it by hand from the Actions tab
+  workflow_dispatch: {}
+  # schedule:               # re-enable ONLY on a South-African self-hosted runner
+  #   - cron: '0 10 * * 1'  # Mon 12:00 SAST (UTC+2)
+  #   - cron: '0 14 * * 1'  # Mon 16:00 SAST
+  #   - cron: '0 7 * * 2'   # Tue 09:00 SAST
 
 permissions:
   contents: write           # allow the job to commit dam_levels.json back to the repo
