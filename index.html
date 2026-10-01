@@ -28,6 +28,10 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.42.0 Sunset course suggestion now COMPUTED from real numbers: longest course a back-marker
+          (settings.backPaceKmh, default 9.5) can finish before sunset minus a margin (default 5 min),
+          using 2.3 km long laps + an optional 2.1 km short lap. Fixes over-suggesting laps (e.g. it
+          was proposing 4 laps for an 18:07 sunset when back-markers only finish 3 in time).
    0.41.0 "Partial" boats (completed fewer laps than the course) keep their real time but rank AFTER
           every full finisher, in the capture list, results, standings and stats — a short run can't
           out-place a full-distance boat.
@@ -498,7 +502,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.41.0";
+const APP_VERSION = "0.42.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -603,8 +607,11 @@ function normalize(d){d.members=d.members||[];d.trials=d.trials||[];d.results=d.
   if(d.settings.appPin==null)d.settings.appPin="";if(d.settings.adminPin==null)d.settings.adminPin="";
   if(d.settings.waGroupTimekeepers==null)d.settings.waGroupTimekeepers="https://chat.whatsapp.com/JpSx0RiRlpiFk4YaVfIh5D?s=cl&p=i&mlu=4&amv=1";
   if(d.settings.waGroupResults==null)d.settings.waGroupResults="https://chat.whatsapp.com/FZiTNLhh7RiF4l3Oey5WD4?s=cl&p=i&mlu=4&amv=1";
-  if(d.settings.longLapKm==null)d.settings.longLapKm=2.3; // long lap distance (2 laps = 4.6 km)
-  if(d.settings.shortLapKm==null)d.settings.shortLapKm=1.4; // short lap distance (3 laps = 4.2 km)
+  if(d.settings.longLapKm==null)d.settings.longLapKm=2.3; // long lap distance (Strava: 2.3/4.6/6.9)
+  if(d.settings.shortLapKm==null)d.settings.shortLapKm=1.4; // SHORT COURSE lap (3 laps = 4.2 km)
+  if(d.settings.longShortLapKm==null)d.settings.longShortLapKm=2.1; // the optional extra short lap tacked onto the long course
+  if(d.settings.backPaceKmh==null)d.settings.backPaceKmh=9.5; // slowest back-marker pace to protect (km/h)
+  if(d.settings.sunsetMarginMin==null)d.settings.sunsetMarginMin=5; // finish this many min before sunset
   // migrate entries to crew model: stable id + memberIds[]
   d.entries.forEach(e=>{if(!e.id)e.id="e"+Math.random().toString(36).slice(2,9);
     if(!e.memberIds)e.memberIds=e.memberId?[e.memberId]:[];if(!e.splits)e.splits=[];});
@@ -846,7 +853,7 @@ function renderTonight(){
   const tTon=S.trials.find(x=>x.date===key);
   if(tTon&&tTon.special&&tTon.special.name)
     note+=`<div class="hintbox">⭐ <b>Special time trial tonight: ${tTon.special.name}</b>${+tTon.special.km?` — ${(+tTon.special.km).toFixed(1)} km`:""}${tTon.special.laps?` over ${tTon.special.laps} lap(s)`:""}.</div>`;
-  else {const sg=suggestCourse(d);const lk=(sg.long*(+S.settings.longLapKm||2.3)+sg.longShort*(+S.settings.shortLapKm||1.4));
+  else {const sg=suggestCourse(d);const lk=(sg.long*(+S.settings.longLapKm||2.3)+sg.longShort*(+S.settings.longShortLapKm||2.1));
     note+=`<div class="warnbox">Sunset ~${sunset}. Suggested long course: <b>${courseLabel(sg.long,sg.longShort)}</b> (~${lk.toFixed(1)} km) — back-markers should be finishing their last lap as the sun sets.</div>`;}
   if(d.getMonth()===7) note+=`<div class="hintbox">🚻 <b>August is Mixed K2 month!</b> Pair up — one man + one woman in a K2 scores in the Mixed League (own trophy, own bragging rights).</div>`;
   if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
@@ -1084,7 +1091,7 @@ function lapKm(course){return course==="short"?shortKmVal():longKmVal();}
 function trialOf(e){return S.trials.find(t=>t.id===e.trialId);}
 function courseKm(t,course){if(!t)return 0;
   if(course!=="short"&&t.special&&+t.special.km)return +t.special.km; // special TT: fixed distance
-  return course==="short"?((t.lapsShort||0)*shortKmVal()):((t.lapsLong||0)*longKmVal()+(t.longShortLaps||0)*shortKmVal());}
+  return course==="short"?((t.lapsShort||0)*shortKmVal()):((t.lapsLong||0)*longKmVal()+(t.longShortLaps||0)*(+S.settings.longShortLapKm||2.1));}
 function courseName(t,course){ // label for a course on a given night ("Long" or the special's name)
   if(course==="short")return "Short";
   return (t&&t.special&&t.special.name)?t.special.name:"Long";}
@@ -1092,16 +1099,24 @@ function entryKm(e){return courseKm(trialOf(e),e.course);}
 function entrySpeed(e){if(e.noSpeed)return null; // non-standard distance that night — speed not comparable
   const tot=entryTotal(e);const sp=tot?entryKm(e)/(tot/3600):null;return (sp&&sp<40)?sp:null;} // km/h
 /* sunset-based suggestion for the long course (each ~10 min later sunset adds a lap) */
+// Suggest the LONGEST course a back-marker can finish before sunset, computed from the real numbers
+// (not fixed thresholds): sunset, the night's start time, the back-marker pace, and a safety margin.
+// A long lap is 2.3 km; an optional 2.1 km short lap is squeezed in only if it still fits.
 function suggestCourse(date){
-  const ss=sunsetFor(date);const m=parseInt(ss.split(":")[0],10)*60+parseInt(ss.split(":")[1],10);
-  let s; // each ~10 min later sunset adds a lap; max 4 long + 1 short (~10.5 km, the summer full course)
-  if(m>=18*60+13) s={long:4,longShort:1};
-  else if(m>=18*60+3) s={long:4,longShort:0};
-  else if(m>=17*60+53) s={long:3,longShort:1};
-  else if(m>=17*60+43) s={long:3,longShort:0};
-  else if(m>=17*60+33) s={long:2,longShort:1};
-  else s={long:2,longShort:0};
-  s.sunset=ss;return s;
+  const ss=sunsetFor(date);
+  const sunsetMin=parseInt(ss.split(":")[0],10)*60+parseInt(ss.split(":")[1],10);
+  const st=startTimeFor(date);const startMin=parseInt(st.split(":")[0],10)*60+parseInt(st.split(":")[1],10);
+  const pace=+S.settings.backPaceKmh||9.5;        // slowest paddler we protect
+  const margin=+S.settings.sunsetMarginMin||5;    // be off the water this many min before sunset
+  const longKm=+S.settings.longLapKm||2.3;
+  const shortLap=+S.settings.longShortLapKm||2.1;
+  const availMin=Math.max(0,sunsetMin-startMin-margin);
+  const maxDist=availMin/60*pace;                 // how far a back-marker can paddle in that window
+  let long=Math.floor(maxDist/longKm);
+  long=Math.max(2,Math.min(5,long));              // keep it a real race (2) but never past the 5-lap max
+  let longShort=0;
+  if(long<5 && long*longKm+shortLap<=maxDist) longShort=1; // add the 2.1 km lap only if it also fits
+  return {long,longShort,sunset:ss};
 }
 function courseLabel(longN,shortN){return longN+" long"+(shortN?" + "+shortN+" short":"")+" lap"+(longN+shortN>1?"s":"");}
 function fmtSpeed(s){return s==null?"":s.toFixed(1)+" km/h";}
