@@ -28,6 +28,10 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.43.0 Settings UI for back-marker pace, sunset margin and the optional short lap (Members tab).
+          New "Post to CCC social group" button: start time, distance, sunset, forecast conditions and
+          dam level in one public message (+ a social-group link setting). Forecast = Open-Meteo for the
+          race start hour on the trial date.
    0.42.0 Sunset course suggestion now COMPUTED from real numbers: longest course a back-marker
           (settings.backPaceKmh, default 9.5) can finish before sunset minus a margin (default 5 min),
           using 2.3 km long laps + an optional 2.1 km short lap. Fixes over-suggesting laps (e.g. it
@@ -304,7 +308,8 @@
         <button class="wa grow" id="btnAnnounce">📣 Announce to volunteers (WhatsApp)</button>
         <button class="sec" id="btnStartTrial">Start capturing →</button>
       </div>
-      <div class="hintbox">The announcement tells the group the start time, distance and who is keeping time — exactly the reminder you asked for.</div>
+      <button class="sec" id="btnSocial" style="width:100%;margin-top:8px">🌐 Post to CCC social group (start · distance · sunset · conditions · dam)</button>
+      <div class="hintbox">Volunteers message = who's keeping time. Social message = start time, distance, sunset, forecast and dam level for the whole club.</div>
     </div>
   </section>
 
@@ -502,7 +507,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.42.0";
+const APP_VERSION = "0.43.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -607,6 +612,7 @@ function normalize(d){d.members=d.members||[];d.trials=d.trials||[];d.results=d.
   if(d.settings.appPin==null)d.settings.appPin="";if(d.settings.adminPin==null)d.settings.adminPin="";
   if(d.settings.waGroupTimekeepers==null)d.settings.waGroupTimekeepers="https://chat.whatsapp.com/JpSx0RiRlpiFk4YaVfIh5D?s=cl&p=i&mlu=4&amv=1";
   if(d.settings.waGroupResults==null)d.settings.waGroupResults="https://chat.whatsapp.com/FZiTNLhh7RiF4l3Oey5WD4?s=cl&p=i&mlu=4&amv=1";
+  if(d.settings.waGroupSocial==null)d.settings.waGroupSocial=""; // CCC social group (for the public pre-race post)
   if(d.settings.longLapKm==null)d.settings.longLapKm=2.3; // long lap distance (Strava: 2.3/4.6/6.9)
   if(d.settings.shortLapKm==null)d.settings.shortLapKm=1.4; // SHORT COURSE lap (3 laps = 4.2 km)
   if(d.settings.longShortLapKm==null)d.settings.longShortLapKm=2.1; // the optional extra short lap tacked onto the long course
@@ -880,6 +886,30 @@ ${(function(){const tt=S.trials.find(x=>x.date===key);if(!tt||!tt.special||!tt.s
 See you on the water!`;
   shareModal("Announce to timekeepers",msg,"timekeepers");
 });
+// Public pre-race post for the CCC social group: start, distance, sunset, forecast, dam level.
+async function buildSocialMsg(){
+  const d=nextThursday();const key=ymd(d);const start=startTimeFor(d);
+  const cc=tonightCourseDesc(d);
+  const notes=($("#tnNotes")&&$("#tnNotes").value.trim())||"";
+  const fc=await fetchForecast(d);
+  const dl=_damLatest||await fetchDam();
+  const lines=[
+    `🛶 *CCC Time Trial — ${fmtDate(key)}*`,
+    `⏰ Start *${start}* · Rietvlei Dam`,
+    `📏 ${cc.label}${cc.km?` (~${cc.km.toFixed(1)} km)`:""}`,
+    `🌅 Sunset ~${sunsetFor(d)} — be off the water before dark`,
+  ];
+  if(fc)lines.push(`🌤 Forecast: ${forecastLine(fc)}`);
+  if(dl&&dl.pct_full!=null)lines.push(`🌊 ${dl.name||"Rietvlei"} ${(+dl.pct_full).toFixed(1)}% full · DWS (unaudited)`);
+  if(notes)lines.push(`📝 ${notes}`);
+  lines.push(`\nAlmal welkom — kom paddle saam! 🛶`);
+  return lines.join("\n");
+}
+$("#btnSocial").addEventListener("click",async()=>{
+  toast("Fetching forecast & dam level…");
+  const msg=await buildSocialMsg();
+  shareModal("Post to CCC social group",msg,"social");
+});
 $("#btnStartTrial").addEventListener("click",()=>{ensureTrialForTonight();show("capture");});
 
 /* ============================================================= ROSTER */
@@ -999,6 +1029,31 @@ async function fetchWeather(){
 }
 function weatherLine(w){if(!w)return"";
   return `${Math.round(w.temp)}°C · wind ${Math.round(w.wind)} km/h ${windDirName(w.dir)}${w.gust&&w.gust>=w.wind+5?` (gusts ${Math.round(w.gust)})`:""}`;}
+// Forecast for the trial's start hour (not "now") — used in the pre-race social post.
+async function fetchForecast(date){
+  const key=ymd(date), hr=parseInt(startTimeFor(date).split(":")[0],10);
+  const u=`https://api.open-meteo.com/v1/forecast?latitude=${RIETVLEI.lat}&longitude=${RIETVLEI.lon}`
+    +`&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation_probability`
+    +`&start_date=${key}&end_date=${key}&timezone=Africa%2FJohannesburg`;
+  try{const r=await fetch(u);const j=await r.json();const h=j.hourly;if(!h||!h.time)return null;
+    let i=h.time.findIndex(t=>t.endsWith(String(hr).padStart(2,"0")+":00"));
+    if(i<0)i=h.time.findIndex(t=>t.endsWith("17:00")); if(i<0)i=0;
+    return {temp:h.temperature_2m[i],wind:h.wind_speed_10m[i],dir:h.wind_direction_10m[i],
+      gust:h.wind_gusts_10m[i],pop:h.precipitation_probability?h.precipitation_probability[i]:null,at:h.time[i]};
+  }catch(e){return null;}
+}
+function forecastLine(w){if(!w)return"";
+  return `${Math.round(w.temp)}°C · wind ${Math.round(w.wind)} km/h ${windDirName(w.dir)}`
+    +(w.gust&&w.gust>=w.wind+5?` (gusts ${Math.round(w.gust)})`:"")
+    +(w.pop!=null&&w.pop>=30?` · ${w.pop}% rain`:"");}
+// What course tonight will actually be: the trial's set laps if it exists, else the sunset suggestion.
+function tonightCourseDesc(d){
+  const t=S.trials.find(x=>x.date===ymd(d));
+  if(t&&t.special&&t.special.name)return {label:t.special.name,km:+t.special.km||0};
+  const sg=suggestCourse(d);
+  const long=t?(t.lapsLong||sg.long):sg.long, ls=t?(t.longShortLaps||0):sg.longShort;
+  return {label:courseLabel(long,ls), km:long*(+S.settings.longLapKm||2.3)+ls*(+S.settings.longShortLapKm||2.1)};
+}
 let _wx=null,_wxAt=0;
 async function currentWeather(){ // cached 10 min so Tonight doesn't hammer the API
   if(_wx&&Date.now()-_wxAt<600000)return _wx;
@@ -1744,21 +1799,36 @@ function renderWaGroups(){
     <p class="small muted">Announcements &amp; swaps open the timekeepers group; results open the results group.</p>
     <label>Timekeepers group link</label><input id="waTk" value="${(S.settings.waGroupTimekeepers||"").replace(/"/g,"&quot;")}">
     <label>Results group link</label><input id="waRes" value="${(S.settings.waGroupResults||"").replace(/"/g,"&quot;")}">
+    <label>CCC social group link</label><input id="waSoc" placeholder="paste the social group invite link" value="${(S.settings.waGroupSocial||"").replace(/"/g,"&quot;")}">
     <button id="waSave" style="margin-top:10px">Save groups</button>`;
-  $("#waSave").onclick=()=>{S.settings.waGroupTimekeepers=$("#waTk").value.trim();S.settings.waGroupResults=$("#waRes").value.trim();save();toast("Groups saved");};
+  $("#waSave").onclick=()=>{S.settings.waGroupTimekeepers=$("#waTk").value.trim();S.settings.waGroupResults=$("#waRes").value.trim();S.settings.waGroupSocial=$("#waSoc").value.trim();save();toast("Groups saved");};
 }
 function renderDistances(){
   const el=$("#distCard");if(!el)return;
-  const ll=+S.settings.longLapKm||2.3, sl=+S.settings.shortLapKm||1.4;
-  el.innerHTML=`<h2>Course distances</h2>
-    <p class="small muted">Used to work out each boat's average speed. Lap counts per night are set on the Capture tab.</p>
+  const ll=+S.settings.longLapKm||2.3, sl=+S.settings.shortLapKm||1.4, lsl=+S.settings.longShortLapKm||2.1;
+  const pace=+S.settings.backPaceKmh||9.5, marg=S.settings.sunsetMarginMin!=null?+S.settings.sunsetMarginMin:5;
+  el.innerHTML=`<h2>Course &amp; sunset settings</h2>
+    <p class="small muted">Lap distances set each boat's average speed. The back-marker pace &amp; sunset margin decide how many laps the app suggests, so the slowest paddler is off the water before dark.</p>
     <div class="row wrap">
       <div class="grow"><label>Long lap (km)</label><input id="dLong" type="number" step="0.1" value="${ll}"></div>
-      <div class="grow"><label>Short lap (km)</label><input id="dShort" type="number" step="0.1" value="${sl}"></div>
+      <div class="grow"><label>Short-course lap (km)</label><input id="dShort" type="number" step="0.1" value="${sl}"></div>
+      <div class="grow"><label>Optional short lap (km)</label><input id="dLsl" type="number" step="0.1" value="${lsl}"></div>
     </div>
-    <div class="small muted" style="margin-top:6px">Now: long ${(ll*2).toFixed(1)} km (2 laps) · short ${(sl*3).toFixed(1)} km (3 laps)</div>
-    <button id="dSave" style="margin-top:10px">Save distances</button>`;
-  $("#dSave").onclick=()=>{S.settings.longLapKm=+$("#dLong").value||2.3;S.settings.shortLapKm=+$("#dShort").value||1.4;save();renderDistances();renderCapture();toast("Distances saved");};
+    <div class="row wrap" style="margin-top:6px">
+      <div class="grow"><label>Back-marker pace (km/h)</label><input id="dPace" type="number" step="0.1" value="${pace}"></div>
+      <div class="grow"><label>Off water before sunset (min)</label><input id="dMarg" type="number" step="1" value="${marg}"></div>
+    </div>
+    <div class="hintbox" id="distPreview" style="margin-top:8px"></div>
+    <button id="dSave" style="margin-top:10px">Save settings</button>`;
+  const sg=suggestCourse(nextThursday());
+  $("#distPreview").innerHTML=`Next Thursday: sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b> (back-marker ${pace} km/h, off ${marg} min before sunset).`;
+  $("#dSave").onclick=()=>{
+    S.settings.longLapKm=+$("#dLong").value||2.3;
+    S.settings.shortLapKm=+$("#dShort").value||1.4;
+    S.settings.longShortLapKm=+$("#dLsl").value||2.1;
+    S.settings.backPaceKmh=+$("#dPace").value||9.5;
+    S.settings.sunsetMarginMin=$("#dMarg").value===""?5:Math.max(0,+$("#dMarg").value);
+    save();renderDistances();renderCapture();renderTonight();toast("Settings saved");};
 }
 
 /* ============================================================= MEMBER STATS (read-only) */
@@ -1987,7 +2057,8 @@ function shareWhatsApp(text, phone){
   else copy(text);
 }
 function copy(text){navigator.clipboard?.writeText(text).then(()=>toast("Message copied — paste into "+WA_GROUP),()=>prompt("Copy this:",text));}
-function waGroup(which){return (S.settings&&(which==="results"?S.settings.waGroupResults:S.settings.waGroupTimekeepers))||"";}
+function waGroup(which){if(!S.settings)return"";
+  return (which==="results"?S.settings.waGroupResults:which==="social"?S.settings.waGroupSocial:S.settings.waGroupTimekeepers)||"";}
 function shareToGroup(text,which){ // copies the message + opens the right WhatsApp group to paste
   const url=waGroup(which);
   if(navigator.clipboard){navigator.clipboard.writeText(text).catch(()=>{});toast("Message copied — paste it into the group");}
