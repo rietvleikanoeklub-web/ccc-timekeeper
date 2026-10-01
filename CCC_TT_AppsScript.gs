@@ -230,9 +230,16 @@ function sendReminders() {
     var intro = (phase === 'thu')
       ? 'Reminder: you are keeping time at the CCC time trial THIS EVENING (' + fmtDateZA(d) + ', start ' + start + ').'
       : 'Heads-up: you are on timekeeping duty this Thursday (' + fmtDateZA(d) + ', start ' + start + ').';
+    var brief = raceBriefing(data, d);
+    var briefTxt = '';
+    if (brief.course)   briefTxt += '• Set the course to ' + brief.course + ' so back-markers finish before dark.\n';
+    if (brief.sunset)   briefTxt += '• Sunset ~' + brief.sunset + ' — everyone off the water before dark.\n';
+    if (brief.forecast) briefTxt += '• Forecast at the start: ' + brief.forecast + '\n';
+    if (briefTxt) briefTxt = '\nOn the day:\n' + briefTxt;
     MailApp.sendEmail({
       to: m.email, cc: ADMIN_CC, subject: subj,
-      body: 'Hi ' + (m.first || r.who) + ',\n\n' + intro + '\n\n'
+      body: 'Hi ' + (m.first || r.who) + ',\n\n' + intro + '\n'
+        + briefTxt + '\n'
         + 'Please be at the dam 10 minutes early with a stopwatch.\n'
         + (phase === 'mon' ? 'If you cannot make it, arrange a swap NOW — a timekeeper who paddles makes the trial unofficial (no points earned).\n' : '')
         + '\nRecord the times on the Timekeeper app: ' + APP_URL + '\n'
@@ -321,6 +328,52 @@ function findMember(members, who) {
 }
 function startTimeForDate(d) { var mo = d.getMonth(); return (mo >= 3 && mo <= 8) ? '17:00' : '17:15'; }
 function fmtDateZA(d) { return Utilities.formatDate(d, Session.getScriptTimeZone(), 'EEE d MMM'); }
+function pad2(n) { return ('0' + n).slice(-2); }
+function hhmmToMin(t) { var p = t.split(':'); return (+p[0]) * 60 + (+p[1]); }
+function windDirName(deg) {
+  var a = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return a[Math.round(((deg % 360) / 22.5)) % 16];
+}
+// Race briefing for the reminder email: sunset + forecast from one Open-Meteo call, and the
+// sunset-safe lap count computed from the app's settings (so it matches what the app suggests).
+function raceBriefing(data, d) {
+  var s = data.settings || {};
+  var dateStr = Utilities.formatDate(d, 'Africa/Johannesburg', 'yyyy-MM-dd');
+  var start = startTimeForDate(d);
+  var hr = parseInt(start.split(':')[0], 10);
+  var url = 'https://api.open-meteo.com/v1/forecast?latitude=-25.891&longitude=28.292'
+    + '&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation_probability'
+    + '&daily=sunset&timezone=Africa%2FJohannesburg&start_date=' + dateStr + '&end_date=' + dateStr;
+  var sunset = null, forecast = '';
+  try {
+    var j = JSON.parse(UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getContentText());
+    if (j.daily && j.daily.sunset && j.daily.sunset[0]) sunset = j.daily.sunset[0].slice(11, 16);
+    if (j.hourly && j.hourly.time) {
+      var idx = -1;
+      for (var k = 0; k < j.hourly.time.length; k++) { if (j.hourly.time[k].slice(11, 13) === pad2(hr)) { idx = k; break; } }
+      if (idx < 0) idx = 0;
+      var t = Math.round(j.hourly.temperature_2m[idx]);
+      var w = Math.round(j.hourly.wind_speed_10m[idx]);
+      var g = Math.round(j.hourly.wind_gusts_10m[idx]);
+      var dir = windDirName(j.hourly.wind_direction_10m[idx]);
+      var pop = j.hourly.precipitation_probability ? j.hourly.precipitation_probability[idx] : null;
+      forecast = t + '°C, wind ' + w + ' km/h ' + dir + (g >= w + 5 ? ' (gusts ' + g + ')' : '')
+        + (pop != null && pop >= 30 ? ', ' + pop + '% rain' : '');
+    }
+  } catch (e) {}
+  var course = '';
+  if (sunset) {
+    var longKm = +s.longLapKm || 2.3, shortLap = +s.longShortLapKm || 2.1;
+    var pace = +s.backPaceKmh || 9.5, margin = (s.sunsetMarginMin != null ? +s.sunsetMarginMin : 5);
+    var avail = Math.max(0, hhmmToMin(sunset) - hhmmToMin(start) - margin);
+    var maxDist = avail / 60 * pace;
+    var long = Math.max(2, Math.min(5, Math.floor(maxDist / longKm)));
+    var ls = (long < 5 && (long * longKm + shortLap) <= maxDist) ? 1 : 0;
+    var km = long * longKm + ls * shortLap;
+    course = long + ' long lap' + (long > 1 ? 's' : '') + (ls ? ' + 1 short lap' : '') + ' (~' + km.toFixed(1) + ' km)';
+  }
+  return { sunset: sunset, course: course, forecast: forecast };
+}
 
 /* -------------------- Drive helpers -------------------- */
 function fileByName(name) {
