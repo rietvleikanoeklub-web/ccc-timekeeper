@@ -28,6 +28,10 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.44.0 Timekeeper sets tonight's laps on Tonight and on Capture: long laps (1–8), extra short
+          laps tacked onto the long course (0–3), and short-course laps (1–10). 4 long + 4 short
+          works without a code change. Sunset suggestion is unchanged and only fills the long course.
+          Lap distances stay the club settings.
    0.43.0 Settings UI for back-marker pace, sunset margin and the optional short lap (Members tab).
           New "Post to CCC social group" button: start time, distance, sunset, forecast conditions and
           dam level in one public message (+ a social-group link setting). Forecast = Open-Meteo for the
@@ -262,6 +266,9 @@
   .duty .d{font-weight:700;width:74px;flex:0 0 auto}
   .duty.next{background:#ecfdf5;border-radius:8px;padding-left:8px;padding-right:8px}
   details summary{cursor:pointer;font-weight:600;color:var(--green);font-size:13px;margin-top:6px}
+  .stepper{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
+  .stepper button{min-width:42px;padding:8px 0;font-size:20px;line-height:1}
+  .stepper input{width:54px;text-align:center;padding:7px 4px;font-weight:800}
 </style>
 </head>
 <body>
@@ -286,7 +293,7 @@
           <div class="big" id="tnStart">—</div>
         </div>
         <div style="text-align:right">
-          <div class="muted small">Distance / course</div>
+          <div class="muted small">Long / short (km)</div>
           <div class="big" id="tnDist">—</div>
         </div>
       </div>
@@ -300,8 +307,9 @@
 
     <div class="card">
       <h2>Set tonight's course</h2>
-      <label>Course / distance for the night</label>
-      <select id="tnCourseSel"></select>
+      <p class="small muted" style="margin-top:0">Laps for tonight. Long and short are separate — 4 and 4 is fine. The sunset line is only a suggestion for the long course.</p>
+      <div id="tnLaps"></div>
+      <button type="button" class="sm sec" id="tnUseSug" style="margin-top:8px">Use sunset suggestion (long course)</button>
       <label>Notes for paddlers (optional)</label>
       <input id="tnNotes" placeholder="e.g. buoy #3 missing — no time bonus tonight">
       <div class="row wrap" style="margin-top:12px">
@@ -367,9 +375,10 @@
         <button id="btnRace" style="max-width:170px">▶ Start race</button>
       </div>
       <div class="tabs" id="capFilter" style="margin-top:14px"></div>
-      <div class="row wrap small muted" id="capLapCfg" style="gap:16px;align-items:center">
-        <span>Long course: <input id="lapsLong" type="number" min="1" style="width:50px;display:inline-block;padding:5px 6px"> long + <input id="longShortLaps" type="number" min="0" style="width:50px;display:inline-block;padding:5px 6px"> short</span>
-        <span>Short course: <input id="lapsShort" type="number" min="1" style="width:50px;display:inline-block;padding:5px 6px"> laps</span>
+      <div class="row wrap small" id="capLapCfg" style="gap:12px 16px;align-items:center">
+        <span>Long <span class="stepper"><button type="button" class="sec" id="lapsLongDec">−</button><input id="lapsLong" type="number" min="1" max="8" inputmode="numeric"><button type="button" class="sec" id="lapsLongInc">+</button></span> long</span>
+        <span>+ <span class="stepper"><button type="button" class="sec" id="lsDec">−</button><input id="longShortLaps" type="number" min="0" max="3" inputmode="numeric"><button type="button" class="sec" id="lsInc">+</button></span> short</span>
+        <span>Short course <span class="stepper"><button type="button" class="sec" id="lapsShortDec">−</button><input id="lapsShort" type="number" min="1" max="10" inputmode="numeric"><button type="button" class="sec" id="lapsShortInc">+</button></span> laps</span>
       </div>
       <div class="row wrap small" id="capSpecCfg" style="gap:8px;align-items:center;margin-top:8px">
         <label style="margin:0;display:flex;align-items:center;gap:6px"><input type="checkbox" id="capSpecial" style="width:auto"> ⭐ Special time trial</label>
@@ -507,7 +516,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = "0.43.0";
+const APP_VERSION = "0.44.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -836,16 +845,22 @@ function renderTonight(){
   const d=nextThursday();const key=ymd(d);const season=seasonFor(d);
   const start=startTimeFor(d);const sunset=sunsetFor(d);
   const duty=S.roster.find(r=>r.date===key);
-  const courseSel=$("#tnCourseSel");
-  // build course options
-  courseSel.innerHTML=Object.entries(COURSES).map(([k,c])=>`<option value="${k}">${c.label}</option>`).join("");
-  const chosen=S.courseChoice[key]||defaultCourse(season);
-  courseSel.value=chosen;
+  const plan=coursePlan(d);
+  const longKm=+S.settings.longLapKm||2.3, lsKm=+S.settings.longShortLapKm||2.1, shKm=+S.settings.shortLapKm||1.4;
+  const lk=plan.long*longKm+plan.extra*lsKm, sk=plan.short*shKm;
+  const lapsEl=$("#tnLaps");
+  if(lapsEl){
+    const tNow=S.trials.find(x=>x.date===key);
+    lapsEl.innerHTML=lapStepperHtml(plan)+(tNow&&tNow.special&&tNow.special.name
+      ? `<div class="warnbox">⭐ Special time trial is on — it overrides the long-course lap count. Untick it on Capture to use the laps above.</div>`:"");
+  }
 
   $("#tnTitle").textContent = (key===ymd(new Date())?"Today — ":"") + d.toLocaleDateString("en-ZA",{weekday:"long",day:"numeric",month:"long"});
   $("#tnSub").textContent="Rietvlei Dam time trial";
   $("#tnStart").textContent=start;
-  $("#tnDist").textContent=COURSES[chosen].km?("~"+COURSES[chosen].km+" km"):"portage";
+  $("#tnDist").textContent=(()=>{const tNow=S.trials.find(x=>x.date===key);
+    if(tNow&&tNow.special&&+tNow.special.km)return (+tNow.special.km).toFixed(1)+" km";
+    return lk.toFixed(1)+" / "+sk.toFixed(1);})();
   $("#tnSeason").innerHTML=`<span class="pill ${season==="Winter"?"winter":season==="Triple S"?"triples":"summer"}">${season}</span>`;
   $("#tnSunset").textContent=sunset+"  ·  off water before dark";
   $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
@@ -865,18 +880,29 @@ function renderTonight(){
   if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
   $("#tnNote").innerHTML=note;
 }
-$("#tnCourseSel").addEventListener("change",e=>{
-  const d=nextThursday();S.courseChoice[ymd(d)]=e.target.value;save();renderTonight();
+$("#tnLaps").addEventListener("click",e=>{
+  const b=e.target.closest&&e.target.closest("[data-dir]"); if(!b)return;
+  commitTonightLaps(b.dataset.which, +b.dataset.dir, true);
+});
+$("#tnLaps").addEventListener("change",e=>{
+  const inp=e.target; if(!inp||!inp.dataset||!inp.dataset.which)return;
+  commitTonightLaps(inp.dataset.which, inp.value, false);
+});
+$("#tnUseSug").addEventListener("click",()=>{
+  const d=nextThursday(); const sg=suggestCourse(d); const p=coursePlan(d);
+  const t=ensureTrialForTonight();
+  t.lapsLong=sg.long; t.longShortLaps=sg.longShort; t.lapsShort=p.short;
+  save(); renderTonight(); toast("Long course set to "+courseLabel(sg.long, sg.longShort));
 });
 $("#btnAnnounce").addEventListener("click",()=>{
-  const d=nextThursday();const key=ymd(d);const season=seasonFor(d);
-  const start=startTimeFor(d);const c=COURSES[S.courseChoice[key]||defaultCourse(season)];
+  const d=nextThursday();const key=ymd(d);
+  const start=startTimeFor(d);const cc=tonightCourseDesc(d);
   const duty=S.roster.find(r=>r.date===key);
   const notes=$("#tnNotes").value.trim();
   const msg=
 `🛶 *CCC Time Trial — ${fmtDate(key)}*
 ⏰ Start: *${start}*
-📏 Tonight: *${(function(){const tt=S.trials.find(x=>x.date===key);return tt&&tt.special&&tt.special.name?tt.special.name+(+tt.special.km?` (${(+tt.special.km).toFixed(1)} km)`:""):c.label;})()}*
+📏 Tonight: *${cc.label}*
 🧑‍⚖️ Timekeeper: *${duty?duty.who:"NOT ASSIGNED — please volunteer"}*
 ${(function(){const tt=S.trials.find(x=>x.date===key);if(!tt||!tt.special||!tt.special.name)return"";
   const n=S.entries.filter(e=>e.trialId===tt.id).length;
@@ -896,7 +922,7 @@ async function buildSocialMsg(){
   const lines=[
     `🛶 *CCC Time Trial — ${fmtDate(key)}*`,
     `⏰ Start *${start}* · Rietvlei Dam`,
-    `📏 ${cc.label}${cc.km?` (~${cc.km.toFixed(1)} km)`:""}`,
+    `📏 ${cc.label}`,
     `🌅 Sunset ~${sunsetFor(d)} — be off the water before dark`,
   ];
   if(fc)lines.push(`🌤 Forecast: ${forecastLine(fc)}`);
@@ -1049,10 +1075,12 @@ function forecastLine(w){if(!w)return"";
 // What course tonight will actually be: the trial's set laps if it exists, else the sunset suggestion.
 function tonightCourseDesc(d){
   const t=S.trials.find(x=>x.date===ymd(d));
-  if(t&&t.special&&t.special.name)return {label:t.special.name,km:+t.special.km||0};
-  const sg=suggestCourse(d);
-  const long=t?(t.lapsLong||sg.long):sg.long, ls=t?(t.longShortLaps||0):sg.longShort;
-  return {label:courseLabel(long,ls), km:long*(+S.settings.longLapKm||2.3)+ls*(+S.settings.longShortLapKm||2.1)};
+  if(t&&t.special&&t.special.name)return {label:t.special.name+(+t.special.km?` (${(+t.special.km).toFixed(1)} km)`:""), km:+t.special.km||0};
+  const p=coursePlan(d);
+  const longKm=+S.settings.longLapKm||2.3, lsKm=+S.settings.longShortLapKm||2.1, shKm=+S.settings.shortLapKm||1.4;
+  const lk=p.long*longKm+p.extra*lsKm, sk=p.short*shKm;
+  const prefix=seasonFor(d)==="Triple S"?"Triple S — ":"";
+  return {label:prefix+courseLabel(p.long,p.extra)+" ("+lk.toFixed(1)+" km), short course "+p.short+" lap"+(p.short>1?"s":"")+" ("+sk.toFixed(1)+" km)", km:lk};
 }
 let _wx=null,_wxAt=0;
 async function currentWeather(){ // cached 10 min so Tonight doesn't hammer the API
@@ -1174,6 +1202,41 @@ function suggestCourse(date){
   return {long,longShort,sunset:ss};
 }
 function courseLabel(longN,shortN){return longN+" long"+(shortN?" + "+shortN+" short":"")+" lap"+(longN+shortN>1?"s":"");}
+// Caps a timekeeper can set on the night without a code change. 4 long + 4 short sits inside these.
+const LAP_CAP={long:8,extra:3,short:10};
+function clampLap(which,v){
+  const n=Math.round(+v);
+  if(which==="extra") return Math.max(0, Math.min(LAP_CAP.extra, isFinite(n)?n:0));
+  if(which==="short") return Math.max(1, Math.min(LAP_CAP.short, isFinite(n)?n:3));
+  return Math.max(1, Math.min(LAP_CAP.long, isFinite(n)?n:2));
+}
+// What tonight will be paddled: the trial's laps if one exists, else the sunset suggestion + season short default.
+function coursePlan(date){
+  const sg=suggestCourse(date), dl=defaultLaps(seasonFor(date));
+  const t=S.trials.find(x=>x.date===ymd(date));
+  return {
+    long: t&&t.lapsLong?+t.lapsLong:sg.long,
+    extra: t?+(t.longShortLaps||0):sg.longShort,
+    short: t&&t.lapsShort?+t.lapsShort:dl.short
+  };
+}
+function lapStepperHtml(p){
+  const longKm=+S.settings.longLapKm||2.3, lsKm=+S.settings.longShortLapKm||2.1, shKm=+S.settings.shortLapKm||1.4;
+  const lk=p.long*longKm+p.extra*lsKm, sk=p.short*shKm;
+  const step=(which,val)=>{const min=which==="extra"?0:1, max=LAP_CAP[which];
+    return `<span class="stepper"><button type="button" class="sec" data-dir="-1" data-which="${which}">−</button><input data-which="${which}" type="number" inputmode="numeric" min="${min}" max="${max}" value="${val}"><button type="button" class="sec" data-dir="1" data-which="${which}">+</button></span>`;};
+  return `<div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>Long course</b><div class="muted">${p.long} × ${longKm} km${p.extra?` + ${p.extra} × ${lsKm} km`:""} = <b>${lk.toFixed(1)} km</b></div></div>${step("long",p.long)}</div>
+    <div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>+ short laps</b> on the long course<div class="muted">optional, each ${lsKm} km</div></div>${step("extra",p.extra)}</div>
+    <div class="row wrap" style="justify-content:space-between"><div class="grow"><b>Short course</b><div class="muted">${p.short} × ${shKm} km = <b>${sk.toFixed(1)} km</b></div></div>${step("short",p.short)}</div>`;
+}
+function commitTonightLaps(which, value, isDelta){
+  const d=nextThursday(); const p=coursePlan(d);
+  const next={long:p.long, extra:p.extra, short:p.short};
+  next[which]=clampLap(which, isDelta? p[which]+value : value);
+  const t=ensureTrialForTonight();
+  t.lapsLong=next.long; t.longShortLaps=next.extra; t.lapsShort=next.short;
+  save(); renderTonight();
+}
 function fmtSpeed(s){return s==null?"":s.toFixed(1)+" km/h";}
 // a member's best total on a course strictly before a date (for improvement tracking)
 function priorBest(memberId,course,beforeDate){let best=null;
@@ -1218,10 +1281,10 @@ function renderCapture(){
   $("#capSpecialFields").style.display=sp?"":"none";
   if(sp){$("#capSpecName").value=sp.name||"";$("#capSpecKm").value=sp.km||"";$("#capSpecLaps").value=sp.laps||"";}
   const sg=suggestCourse(new Date(t.date+"T12:00:00"));
-  const lk=courseKm(t,"long");
+  const lk=courseKm(t,"long"), sk=courseKm(t,"short");
   $("#lapSuggest").innerHTML=sp
     ? `<span class="muted">⭐ Special: <b>${sp.name||"unnamed"}</b> — ${(+sp.km||0).toFixed(1)} km over ${sp.laps||"?"} lap(s). Normal long-course laps are ignored tonight.</span>`
-    : `<span class="muted">Long course now: <b>${courseLabel(t.lapsLong||2,t.longShortLaps||0)}</b> (${lk.toFixed(1)} km). `
+    : `<span class="muted">Long: <b>${courseLabel(t.lapsLong||2,t.longShortLaps||0)}</b> (${lk.toFixed(1)} km). Short: <b>${t.lapsShort||3} laps</b> (${sk.toFixed(1)} km). `
       +`Sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b>.</span>`
       +((sg.long!==(t.lapsLong||2)||sg.longShort!==(t.longShortLaps||0))?` <button class="sm sec" id="lapApply" style="padding:4px 8px">Use suggestion</button>`:"");
   if($("#lapApply"))$("#lapApply").onclick=()=>{t.lapsLong=sg.long;t.longShortLaps=sg.longShort;save();renderCapture();toast("Long course set to "+courseLabel(sg.long,sg.longShort));};
@@ -1478,9 +1541,20 @@ $("#btnRace").addEventListener("click",()=>{
       if(tt&&!tt.weather){tt.weather=w;save();renderCapture();}}).catch(()=>{});}
   else if(confirm("Reset the race clock? Lap times already recorded are kept.")){t.startedAt=null;save();renderCapture();}
 });
-$("#lapsLong").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsLong=Math.max(1,+e.target.value||2);save();renderCapture();}});
-$("#lapsShort").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsShort=Math.max(1,+e.target.value||2);save();renderCapture();}});
-$("#longShortLaps").addEventListener("change",e=>{const t=currentTrial();if(t){t.longShortLaps=Math.max(0,+e.target.value||0);save();renderCapture();}});
+function bumpLap(inputId, which, dir){
+  const el=$("#"+inputId); if(!el)return;
+  el.value=clampLap(which,(+el.value||0)+dir);
+  el.dispatchEvent(new Event("change"));
+}
+$("#lapsLongDec").addEventListener("click",()=>bumpLap("lapsLong","long",-1));
+$("#lapsLongInc").addEventListener("click",()=>bumpLap("lapsLong","long",1));
+$("#lsDec").addEventListener("click",()=>bumpLap("longShortLaps","extra",-1));
+$("#lsInc").addEventListener("click",()=>bumpLap("longShortLaps","extra",1));
+$("#lapsShortDec").addEventListener("click",()=>bumpLap("lapsShort","short",-1));
+$("#lapsShortInc").addEventListener("click",()=>bumpLap("lapsShort","short",1));
+$("#lapsLong").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsLong=clampLap("long",e.target.value);save();renderCapture();}});
+$("#lapsShort").addEventListener("change",e=>{const t=currentTrial();if(t){t.lapsShort=clampLap("short",e.target.value);save();renderCapture();}});
+$("#longShortLaps").addEventListener("change",e=>{const t=currentTrial();if(t){t.longShortLaps=clampLap("extra",e.target.value);save();renderCapture();}});
 $("#capSpecial").addEventListener("change",e=>{const t=currentTrial();if(!t)return;
   if(e.target.checked)t.special={name:"",km:"",laps:""};else delete t.special;
   save();renderCapture();});
