@@ -363,7 +363,11 @@ function raceBriefing(data, d) {
   } catch (e) {}
   var course = '';
   if (sunset) {
-    var longKm = +s.longLapKm || 2.3, shortLap = +s.longShortLapKm || 2.1;
+    var longKm = +s.longLapKm || 2.3, shortLap = +s.longShortLapKm || 1.4;
+    // Optional short lap is the short-course loop (1.4 km). A stored 2.1 is the old default
+    // (GPS 10 Sep 2026). The app rewrites that once and sets longShortLapMig; a later custom
+    // value, even 2.1, is kept. This read-time check matches the app before that sync lands.
+    if (s.longShortLapMig !== 1 && Math.abs(shortLap - 2.1) < 1e-6) shortLap = 1.4;
     var pace = +s.backPaceKmh || 9.5, margin = (s.sunsetMarginMin != null ? +s.sunsetMarginMin : 5);
     var avail = Math.max(0, hhmmToMin(sunset) - hhmmToMin(start) - margin);
     var maxDist = avail / 60 * pace;
