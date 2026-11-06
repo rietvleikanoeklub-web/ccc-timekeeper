@@ -11,7 +11,8 @@
   "use strict";
 
   var SERIES_ID = "2026-27";
-  var SEASON = "SSS 2026/27";
+  // Poster nights use the existing Triple S league. They are not a new season.
+  var SEASON = "Triple S";
   var K1_YEAR = 2027;
   // First and last Thursday of the old generic window for THIS season, extended
   // through the poster final (11 Feb), which sits after the old 4 Feb cutoff.
@@ -19,8 +20,10 @@
   var WINDOW_END = "2027-02-11";
   var PFD = "PFDs compulsory, no exceptions";
   var START_NOTE = "Start time is the club's existing summer time trial time, 17:15 SAST. The poster does not state a time.";
-  var SCORING_GAP = "The poster names the series and the two 2027 K1 leagues. It does not publish points, penalties, bonuses, how many races count, or whether the dry run scores. Series nights are kept out of the Summer league and the historical Triple S league. No series points table is invented. Ordinary time-trial scoring is unchanged.";
-  var SCORING_SHORT = "Series points, penalties and whether the dry run scores are not on the poster. No series points are shown. Ordinary time-trial scoring is unchanged.";
+  // Existing league scoring still applies. What the poster does not settle is
+  // called out here and is not turned into a new rule.
+  var SCORING_NOTE = "These nights are the Triple S league and use the existing points: 10 to 1 within each course, +3 for a season-best unless a buoy was missing, and +10 per 10 trials. Long (SSS / Vat-die-Krok) and short (Splash & Dash / Vat-die-Likkewaan) are separate groups on the same night. There is no separate Splash & Dash points table. The poster does not say whether the 4 Feb dry run counts. 4 Feb stays Triple S, which is what the old 4 Feb rule already did, so no dry-run score was added or removed.";
+  var SCORING_SHORT = "Scored in the Triple S league with the existing points. Long and short are separate. The 4 Feb dry run is not given its own score.";
 
   // Exact poster nights. kind distinguishes a normal series night from the dry run and the final.
   var NIGHTS = [
@@ -142,7 +145,6 @@
     var m = asDate(date).getMonth();
     return (m >= 3 && m <= 8) ? "17:00" : "17:15";
   }
-  function isSeriesSeason(season){ return season === SEASON; }
   function isSeriesTrial(trial){ return !!(trial && trial.series && trial.series.id === SERIES_ID); }
   function kindTitle(kind){
     if (kind === "dry-run") return "Dry run";
@@ -211,7 +213,8 @@
     WINDOW_END: WINDOW_END,
     PFD: PFD,
     START_NOTE: START_NOTE,
-    SCORING_GAP: SCORING_GAP,
+    SCORING_NOTE: SCORING_NOTE,
+    SCORING_GAP: SCORING_NOTE,
     SCORING_SHORT: SCORING_SHORT,
     LONG: LONG,
     SHORT: SHORT,
@@ -220,7 +223,6 @@
     specFor: specFor,
     seasonFor: seasonFor,
     startTimeFor: startTimeFor,
-    isSeriesSeason: isSeriesSeason,
     isSeriesTrial: isSeriesTrial,
     kindTitle: kindTitle,
     offWeekThursdays: offWeekThursdays,

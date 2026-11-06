@@ -140,7 +140,11 @@ assert.strictEqual(TT.startTimeFor("2026-09-30"), "17:00");
 assert.strictEqual(TT.startTimeFor("2026-10-01"), "17:15");
 assert.match(TT.START_NOTE, /17:15/);
 assert.match(TT.START_NOTE, /does not state a time/i);
-assert.match(TT.SCORING_GAP, /does not publish points/i);
+assert.strictEqual(TT.SEASON, "Triple S");
+assert.match(TT.SCORING_NOTE, /Triple S league/);
+assert.match(TT.SCORING_NOTE, /no separate Splash & Dash points table/i);
+assert.match(TT.SCORING_NOTE, /no dry-run score/i);
+assert.doesNotMatch(TT.SCORING_NOTE, /kept out of the Summer|no series points table|not given a points table/i);
 assert.strictEqual(TT.pointsForPosition, undefined);
 
 // New-trial stamp carries course metadata only. It does not invent a field of boats.
@@ -157,7 +161,9 @@ assert.strictEqual(stamped.series.k1Year, 2027);
 assert.strictEqual(stamped.entries, undefined);
 assert.strictEqual(stamped.results, undefined);
 assert.strictEqual(stamped.members, undefined);
+assert.strictEqual(TT.stampNewTrial("2027-02-04").season, "Triple S");
 assert.strictEqual(TT.stampNewTrial("2027-02-04").series.kind, "dry-run");
+assert.strictEqual(TT.stampNewTrial("2027-02-11").season, "Triple S");
 assert.strictEqual(TT.stampNewTrial("2027-02-11").series.kind, "final");
 
 // Ordinary and historical nights are not stamped as this series.
@@ -191,7 +197,7 @@ assert.strictEqual(TT.isSeriesTrial(seriesTrial), true);
 // Lap-triangle distance for an ordinary long course stays 2 long × 2.3 + 1 short × 1.4.
 assert.strictEqual(+(2 * 2.3 + 1 * 1.4).toFixed(1), 6.0);
 
-// Dry run and final are different nights, both still the series, neither scored here.
+// Dry run and final are different nights. Both are still Triple S. Scoring is tested in scoring.test.js.
 assert.notStrictEqual(TT.specFor("2027-02-04").kind, TT.specFor("2027-02-11").kind);
 assert.strictEqual(TT.kindTitle("dry-run"), "Dry run");
 assert.strictEqual(TT.kindTitle("final"), "Final");
@@ -207,17 +213,22 @@ const gsDates = [...gs.matchAll(/'(202[67]-\d{2}-\d{2})'\s*:\s*'(standard|dry-ru
 assert.deepStrictEqual(gsDates, expected);
 
 // App shell version, cache, preserved scoring, preserved lap fix, sanitised-sync guard.
-assert.match(html, /const APP_VERSION = "0\.46\.0"/);
-assert.match(sw, /const CACHE = "ccc-tk-v0\.46\.0"/);
+assert.match(html, /const APP_VERSION = "0\.46\.1"/);
+assert.match(sw, /const CACHE = "ccc-tk-v0\.46\.1"/);
 assert.match(sw, /tt-series\.js/);
+assert.match(sw, /tt-score\.js/);
 assert.match(html, /src="tt-series\.js"/);
+assert.match(html, /src="tt-score\.js"/);
 assert.match(results, /src="tt-series\.js"/);
-assert.match(html, /function pointsForPosition\(pos\)\{return pos<=9\?\(11-pos\):1;\}/);
-assert.match(results, /const pointsForPosition=p=>p<=9\?\(11-p\):1;/);
+assert.match(results, /src="tt-score\.js"/);
+assert.match(read("tt-score.js"), /function pointsForPosition\(pos\) \{ return pos <= 9 \? \(11 - pos\) : 1; \}/);
+assert.match(html, /function pointsForPosition\(pos\)\{return TTScore\.pointsForPosition\(pos\);\}/);
 assert.match(html, /if\(remote\.sanitised\)/);
 assert.match(html, /longShortLapKm=1\.4/);
 assert.match(html, /Math\.abs\(km-2\.1\)<1e-6\) d\.settings\.longShortLapKm=1\.4/);
-assert.match(html, /const trials=S\.trials\.filter\(t=>t\.season===season\)/);
+assert.match(read("tt-score.js"), /return t\.season === season/);
+assert.doesNotMatch(html, /isSeriesSeason/);
+assert.doesNotMatch(results, /isSeriesSeason/);
 
 const courseFn = html.slice(html.indexOf("function courseKm"), html.indexOf("function courseName"));
 const iSpecial = courseFn.indexOf("t.special");

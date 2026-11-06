@@ -28,13 +28,16 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.46.1 Poster nights stay in the existing Triple S league and keep its points
+          (10 to 1 within each course, +3 season-best unless buoy-short, +10 per 10 trials).
+          Long and short stay separate groups. No separate Splash & Dash table and no
+          dry-run score. 4 Feb stays Triple S, as the old 4 Feb rule already did.
    0.46.0 2026/27 series from the club poster. Exact dates only (12, 19, 26 Nov 2026;
           3 Dec 2026; 14, 21, 28 Jan 2027; 4 Feb 2027 dry run; 11 Feb 2027 final).
           SSS / Vat-die-Krok is 2 time-trial laps + run with boat + 1 time-trial lap = 9.3 km.
           Splash & Dash / Vat-die-Likkewaan is 2 short laps + run without boat + 1 short lap = 5.3 km.
           Off-week and holiday-week Thursdays in that window stay ordinary summer time trials.
-          Historical Triple S (generic 5 Nov–4 Feb in other seasons) is unchanged. Series nights
-          are not given a points table — the poster does not publish one. Start stays 17:15 SAST.
+          Historical Triple S (generic 5 Nov–4 Feb in other seasons) is unchanged. Start stays 17:15 SAST.
           PFDs compulsory, no exceptions, on series nights. No seeded results.
    0.45.0 Optional short lap on the long course is 1.4 km (the short-course loop; GPS 10 Sep 2026),
           not 2.1. A saved 2.1 is corrected once and synced; any other custom distance is left
@@ -453,7 +456,7 @@
           10 pts for 1st boat, 9 for 2nd … 2 pts for 9th, 1 pt for every other finisher.
           +3 bonus for beating your season-best on the same course (unless a buoy was missing).
           +10 bonus after every 10 trials completed. Winner = most points; ties broken by season-best time.
-          Ordinary Thursday leagues only. The 2026/27 series has no points table — the poster does not publish one.
+          The same rules apply to Summer, Winter and Triple S. Long and short score as separate groups.
         </div>
       </details>
     </div>
@@ -527,9 +530,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="tt-series.js"></script>
+<script src="tt-score.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "0.46.0";
+const APP_VERSION = "0.46.1";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -872,13 +876,11 @@ function seasonFor(date){return TTSeries.seasonFor(date);}
 function defaultCourse(season){
   if(season==="Winter")return "winter_2lap";
   if(season==="Triple S")return "triples";
-  if(TTSeries.isSeriesSeason(season))return "sss_2026";
   return "summer_long";
 }
 function seasonPill(season){
-  const series=TTSeries.isSeriesSeason(season);
-  const cls=season==="Winter"?"winter":(season==="Triple S"||series)?"triples":"summer";
-  return `<span class="pill ${cls}">${series?"SSS 2026/27":season}</span>`;
+  const cls=season==="Winter"?"winter":season==="Triple S"?"triples":"summer";
+  return `<span class="pill ${cls}">${season}</span>`;
 }
 function seriesTonightHtml(spec){
   const kind=spec.kind==="standard"?"":`<div style="margin-top:4px"><b>${TTSeries.kindTitle(spec.kind)}</b> — ${
@@ -1228,7 +1230,6 @@ let capFilter="ALL", _clock=null;
 function defaultLaps(season){
   if(season==="Winter")   return {long:2, short:3};
   if(season==="Triple S") return {long:3, short:3};
-  if(TTSeries.isSeriesSeason(season)) return {long:TTSeries.LONG.laps, short:TTSeries.SHORT.laps};
   return {long:5, short:3}; // Summer
 }
 function ensureTrialForTonight(){
@@ -1263,17 +1264,12 @@ function capMemberName(id,dup){const m=S.members.find(x=>x.id===id);if(!m)return
   const k=(m.first||"").trim().toLowerCase();
   return m.first+((dup&&dup.has(k)&&m.last)?(" "+m.last[0]):"");}
 function capName(e,dup){return (e.memberIds||[]).map(id=>capMemberName(id,dup)).join(" & ")||"—";}
-function lapTarget(t,course){ // long course = long laps + appended short laps; a special TT sets its own
-  if(course==="short")return t.lapsShort||2;
-  if(t.special&&+t.special.laps)return +t.special.laps;
-  return (t.lapsLong||2)+(t.longShortLaps||0);}
-function entryTotal(e){return (e.total!=null)?e.total:(e.splits&&e.splits.length?e.splits[e.splits.length-1]:null);}
-// "partial" = completed fewer laps than the course (a shorter distance). Keep the real time, but
-// rank them AFTER every full finisher so a short run can't out-place a full-distance boat.
-function _pt(e){return e&&e.partial?1:0;}
-function cmpEntry(a,b){return _pt(a)-_pt(b)||entryTotal(a)-entryTotal(b);}   // arrays of entries
-function cmpET(a,b){return _pt(a.e)-_pt(b.e)||a.total-b.total;}              // arrays of {e,total}
-function entryDone(e,t){return e.done===true || (e.splits?e.splits.length:0)>=lapTarget(t,e.course);} // imported results set total+done
+function lapTarget(t,course){return TTScore.lapTarget(t,course);} // long laps + appended short laps; a special TT sets its own
+function entryTotal(e){return TTScore.entryTotal(e);}
+// "partial" = completed fewer laps than the course. Real time kept, ranked after every full finisher.
+function cmpEntry(a,b){return TTScore.cmpEntry(a,b);}
+function cmpET(a,b){return TTScore.cmpET(a,b);}
+function entryDone(e,t){return TTScore.entryDone(e,t);} // imported results set total+done
 function raceElapsed(t){return t&&t.startedAt?(Date.now()-t.startedAt)/1000:0;}
 function longKmVal(){return +S.settings.longLapKm||2.3;}
 function shortKmVal(){return +S.settings.shortLapKm||1.4;}
@@ -1761,39 +1757,11 @@ function stopClock(){if(_clock){clearInterval(_clock);_clock=null;}}
 
 /* ============================================================= STANDINGS / SCORING */
 let standSeason="Summer", standClass="ALL", standCourse="ALL";
-function pointsForPosition(pos){return pos<=9?(11-pos):1;}
-function boatMatch(boat,f){ // "ALL" | exact class | "K*" all kayaks | "S*" all surfskis
-  return f==="ALL"||boat===f||(f==="K*"&&(boat||"")[0]==="K")||(f==="S*"&&(boat||"")[0]==="S");
-}
+function pointsForPosition(pos){return TTScore.pointsForPosition(pos);}
+function boatMatch(boat,f){return TTScore.boatMatch(boat,f);}
 function computeStandings(season,boatFilter,courseFilter){
-  // Positions are scored WITHIN each course group (long/short) per trial — you can't
-  // rank a 5km short-course time against a 10km long-course time.
-  const trials=S.trials.filter(t=>t.season===season);
-  const tally={}; // memberId -> {pts, best, count, name, courseBest}
-  trials.forEach(t=>{
-    ["long","short"].forEach(course=>{
-      if(courseFilter&&courseFilter!=="ALL"&&course!==courseFilter)return;
-      const group=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
-        .map(e=>({e,total:entryTotal(e)})).sort(cmpET);
-      group.forEach((g,i)=>{
-        const r=g.e;if(!boatMatch(r.boat,boatFilter))return;
-        const pts=pointsForPosition(i+1);
-        (r.memberIds||[]).forEach(id=>{ // every crew member earns the boat's position points
-          tally[id]=tally[id]||{pts:0,best:null,count:0,name:memberName(id),courseBest:{}};
-          const e=tally[id];
-          e.pts+=pts;
-          e.count++;
-          const cb=e.courseBest[course]; // season-best per course, skip if buoy-shortened
-          if(!t.buoyShort && cb!=null && g.total<cb){e.pts+=3;}
-          if(cb==null||g.total<cb)e.courseBest[course]=g.total;
-          if(e.best==null||g.total<e.best)e.best=g.total;
-        });
-      });
-    });
-  });
-  Object.values(tally).forEach(e=>{e.pts+=Math.floor(e.count/10)*10;}); // +10 per 10 trials
-  return Object.entries(tally).map(([id,e])=>({id,...e}))
-    .sort((a,b)=>b.pts-a.pts || (a.best||9e9)-(b.best||9e9));
+  // Within each course group. Triple S is its own season and is not added to Summer.
+  return TTScore.scoreLeague(S.trials,S.entries,season,boatFilter,courseFilter,memberName);
 }
 /* Mixed K2 league (August): K2 crews of one man + one woman, scored as TEAMS,
    ranked among mixed crews only — reviving the club's historical Mixed-K2 League */
@@ -1829,18 +1797,18 @@ function seriesStandHtml(){
     <div style="margin-top:6px"><b>${Sh.leagueName}</b> — ${Sh.style}.<br>${Sh.structure} = <b>${Sh.km.toFixed(1)} km</b>.</div>
     <div style="margin-top:6px">🦺 <b>${TTSeries.PFD}</b></div>
     <div class="small" style="margin-top:6px">${TTSeries.START_NOTE}</div></div>
-    <div class="warnbox">${TTSeries.SCORING_GAP}</div>
+    <div class="hintbox">${TTSeries.SCORING_NOTE}</div>
     <table><thead><tr><th>Date</th><th>Night</th><th class="num">km</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="small" style="margin-top:10px;font-weight:800">Thursdays in this season that are not series nights</div>
     <ul class="small muted" style="margin:6px 0 0;padding-left:18px">${offs}</ul>
     <div class="small muted" style="margin-top:8px">No paddlers or results are loaded for these nights. A timekeeper starts a race from Tonight on the night itself.</div>`;
 }
 function renderStandings(){
-  const seasons=[["Summer","Summer"],["Winter","Winter"],["Triple S","Triple S"],["Mixed K2","Mixed K2"],[TTSeries.SEASON,"2026/27"]];
+  const seasons=[["Summer","Summer"],["Winter","Winter"],["Triple S","Triple S"],["Mixed K2","Mixed K2"],["2026/27","2026/27"]];
   $("#standTabs").innerHTML=seasons.map(([id,label])=>`<button class="${id===standSeason?"on":""}" data-s="${id}">${label}</button>`).join("");
   $$("#standTabs button").forEach(b=>b.onclick=()=>{standSeason=b.dataset.s;renderStandings();});
   const exportRow=$("#standExportRow");
-  if(TTSeries.isSeriesSeason(standSeason)){
+  if(standSeason==="2026/27"){
     $("#standClass").style.display="none";
     $("#standCourseTabs").style.display="none";
     if(exportRow) exportRow.style.display="none";
@@ -1906,7 +1874,7 @@ function ensureXLSX(){return window.XLSX?Promise.resolve():new Promise((res,rej)
   const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
   s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
 async function exportExcel(doEmail){
-  if(TTSeries.isSeriesSeason(standSeason)){toast("2026/27 series points are not on the poster");return;}
+  if(standSeason==="2026/27"){toast("Points for these nights are on the Triple S tab");return;}
   const season=standSeason;const {standAOA,resAOA}=buildAOAs(season);
   if(standAOA.length<=1){toast("No results for "+season+" yet");return;}
   let b64,filename,mime,blob;
@@ -2168,9 +2136,8 @@ function showMemberStats(mid){
     if(st.fadeN){const f=st.fadeSum/st.fadeN;
       body+=row("Lap fade",(f>=0?"+":"−")+Math.abs(f).toFixed(0)+"s <span class='muted small'>lap 2 vs lap 1 avg</span>");}
     const season=seasonFor(new Date());
-    if(TTSeries.isSeriesSeason(season)) body+=row("This Thursday","2026/27 series night. Points for the K1 leagues are not on the poster.");
-    else {const lg=computeStandings(season,"ALL","ALL");const i=lg.findIndex(r=>r.id===mid);
-      if(i>=0)body+=row(season+" league","#"+(i+1)+" · "+lg[i].pts+" pts");}
+    const lg=computeStandings(season,"ALL","ALL");const i=lg.findIndex(r=>r.id===mid);
+    if(i>=0)body+=row(season+" league","#"+(i+1)+" · "+lg[i].pts+" pts");
     ["long","short"].forEach(cse=>{const c=st.courses[cse];if(!c)return;
       body+=`<div class="small" style="margin-top:10px;font-weight:800;color:var(--muted)">${cse==="long"?"LONG":"SHORT"} COURSE</div>`;
       body+=row("Races",c.n+(c.wins?` · 🥇×${c.wins}`:""));
