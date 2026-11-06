@@ -232,7 +232,8 @@ function sendReminders() {
       : 'Heads-up: you are on timekeeping duty this Thursday (' + fmtDateZA(d) + ', start ' + start + ').';
     var brief = raceBriefing(data, d);
     var briefTxt = '';
-    if (brief.course)   briefTxt += '• Set the course to ' + brief.course + ' so back-markers finish before dark.\n';
+    if (brief.series)   briefTxt += '• Series night: ' + brief.course + '\n';
+    else if (brief.course) briefTxt += '• Set the course to ' + brief.course + ' so back-markers finish before dark.\n';
     if (brief.sunset)   briefTxt += '• Sunset ~' + brief.sunset + ' — everyone off the water before dark.\n';
     if (brief.forecast) briefTxt += '• Forecast at the start: ' + brief.forecast + '\n';
     if (briefTxt) briefTxt = '\nOn the day:\n' + briefTxt;
@@ -273,9 +274,11 @@ function publishSchedule() {
     var s = new Date(d); s.setHours(parseInt(start.split(':')[0], 10), parseInt(start.split(':')[1], 10), 0, 0);
     var en = new Date(s.getTime() + 90 * 60000);
     var m = findMember(members, r.who);
+    var series = seriesNight(d);
     var ev = cal.createEvent('🛶 Timekeeping: ' + r.who, s, en, {
       description: r.who + ' is on timekeeping duty for the CCC Thursday time trial (start ' + start + ').\n'
         + 'Be at the dam 10 min early with a stopwatch. Arrange a swap in advance if needed.\n'
+        + (series ? series.line + '\n' : '')
         + 'Record the times on the Timekeeper app: ' + APP_URL,
       location: 'Rietvlei Dam',
       guests: (m && m.email) ? m.email : '',
@@ -327,6 +330,35 @@ function findMember(members, who) {
   });
 }
 function startTimeForDate(d) { var mo = d.getMonth(); return (mo >= 3 && mo <= 8) ? '17:00' : '17:15'; }
+
+/* 2026/27 poster nights. Keep in step with tt-series.js — tests/series2026.test.js
+   checks these dates. The live Apps Script project is unchanged until this file is
+   pasted and redeployed. Start time stays the club clock (17:15 in these months);
+   the poster does not state a time. No points are awarded here. */
+var SERIES_2026_NIGHTS = {
+  '2026-11-12': 'standard',
+  '2026-11-19': 'standard',
+  '2026-11-26': 'standard',
+  '2026-12-03': 'standard',
+  '2027-01-14': 'standard',
+  '2027-01-21': 'standard',
+  '2027-01-28': 'standard',
+  '2027-02-04': 'dry-run',
+  '2027-02-11': 'final'
+};
+function seriesNight(d) {
+  var key = Utilities.formatDate(d, 'Africa/Johannesburg', 'yyyy-MM-dd');
+  var kind = SERIES_2026_NIGHTS[key];
+  if (!kind) return null;
+  var head = kind === 'dry-run' ? 'DRY RUN for Vat-die-Krok and Vat-die-Likkewaan. '
+    : kind === 'final' ? 'FINAL for Vat-die-Krok and Vat-die-Likkewaan. ' : '';
+  var line = head
+    + 'Super Serious Series / Vat-die-Krok (2027 K1): 2 time trial laps + run with boat + 1 time trial lap = 9.3 km. '
+    + 'Splash & Dash / Vat-die-Likkewaan (2027 K1): 2 short time trial laps + run without boat + 1 short time trial lap = 5.3 km. '
+    + 'PFDs compulsory, no exceptions.';
+  if (kind === 'dry-run') line += ' The poster does not say whether the dry run scores.';
+  return { kind: kind, line: line };
+}
 function fmtDateZA(d) { return Utilities.formatDate(d, Session.getScriptTimeZone(), 'EEE d MMM'); }
 function pad2(n) { return ('0' + n).slice(-2); }
 function hhmmToMin(t) { var p = t.split(':'); return (+p[0]) * 60 + (+p[1]); }
@@ -361,8 +393,9 @@ function raceBriefing(data, d) {
         + (pop != null && pop >= 30 ? ', ' + pop + '% rain' : '');
     }
   } catch (e) {}
-  var course = '';
-  if (sunset) {
+  var series = seriesNight(d);
+  var course = series ? series.line : '';
+  if (!series && sunset) {
     var longKm = +s.longLapKm || 2.3, shortLap = +s.longShortLapKm || 1.4;
     // Optional short lap is the short-course loop (1.4 km). A stored 2.1 is the old default
     // (GPS 10 Sep 2026). The app rewrites that once and sets longShortLapMig; a later custom
@@ -376,7 +409,7 @@ function raceBriefing(data, d) {
     var km = long * longKm + ls * shortLap;
     course = long + ' long lap' + (long > 1 ? 's' : '') + (ls ? ' + 1 short lap' : '') + ' (~' + km.toFixed(1) + ' km)';
   }
-  return { sunset: sunset, course: course, forecast: forecast };
+  return { sunset: sunset, course: course, forecast: forecast, series: !!series };
 }
 
 /* -------------------- Drive helpers -------------------- */

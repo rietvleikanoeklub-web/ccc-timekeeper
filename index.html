@@ -28,6 +28,14 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.46.0 2026/27 series from the club poster. Exact dates only (12, 19, 26 Nov 2026;
+          3 Dec 2026; 14, 21, 28 Jan 2027; 4 Feb 2027 dry run; 11 Feb 2027 final).
+          SSS / Vat-die-Krok is 2 time-trial laps + run with boat + 1 time-trial lap = 9.3 km.
+          Splash & Dash / Vat-die-Likkewaan is 2 short laps + run without boat + 1 short lap = 5.3 km.
+          Off-week and holiday-week Thursdays in that window stay ordinary summer time trials.
+          Historical Triple S (generic 5 Nov–4 Feb in other seasons) is unchanged. Series nights
+          are not given a points table — the poster does not publish one. Start stays 17:15 SAST.
+          PFDs compulsory, no exceptions, on series nights. No seeded results.
    0.45.0 Optional short lap on the long course is 1.4 km (the short-course loop; GPS 10 Sep 2026),
           not 2.1. A saved 2.1 is corrected once and synced; any other custom distance is left
           alone. 2 long + 1 short is 6.0 km, and the sunset suggestion uses 1.4.
@@ -296,7 +304,7 @@
           <div class="big" id="tnStart">—</div>
         </div>
         <div style="text-align:right">
-          <div class="muted small">Long / short (km)</div>
+          <div class="muted small" id="tnDistLabel">Long / short (km)</div>
           <div class="big" id="tnDist">—</div>
         </div>
       </div>
@@ -310,7 +318,7 @@
 
     <div class="card">
       <h2>Set tonight's course</h2>
-      <p class="small muted" style="margin-top:0">Laps for tonight. Long and short are separate — 4 and 4 is fine. The sunset line is only a suggestion for the long course.</p>
+      <p class="small muted" id="tnLapHelp" style="margin-top:0">Laps for tonight. Long and short are separate — 4 and 4 is fine. The sunset line is only a suggestion for the long course.</p>
       <div id="tnLaps"></div>
       <button type="button" class="sm sec" id="tnUseSug" style="margin-top:8px">Use sunset suggestion (long course)</button>
       <label>Notes for paddlers (optional)</label>
@@ -435,16 +443,17 @@
       </div>
       <div class="tabs" id="standCourseTabs" style="margin-bottom:10px"></div>
       <div id="standTable"></div>
-      <div class="row wrap" style="margin-top:12px">
+      <div class="row wrap" id="standExportRow" style="margin-top:12px">
         <button class="sec grow" id="standXlsx">⬇️ Download Excel</button>
         <button class="grow" id="standEmail">✉️ Email results</button>
       </div>
       <div class="small muted" id="standExportInfo" style="margin-top:6px"></div>
-      <details style="margin-top:8px"><summary>How points work</summary>
+      <details id="standPointsHelp" style="margin-top:8px"><summary>How points work</summary>
         <div class="small muted" style="margin-top:6px">
           10 pts for 1st boat, 9 for 2nd … 2 pts for 9th, 1 pt for every other finisher.
           +3 bonus for beating your season-best on the same course (unless a buoy was missing).
           +10 bonus after every 10 trials completed. Winner = most points; ties broken by season-best time.
+          Ordinary Thursday leagues only. The 2026/27 series has no points table — the poster does not publish one.
         </div>
       </details>
     </div>
@@ -517,9 +526,10 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="tt-series.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "0.45.0";
+const APP_VERSION = "0.46.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -853,21 +863,32 @@ function fmtSecs(s){if(s==null)return"—";const h=Math.floor(s/3600),m=Math.flo
   return (h?h+":"+pad(m):m+"")+":"+pad(x);}
 function fmtClock(s){if(s==null)return"—";const m=Math.floor(s/60),x=s%60;return m+":"+(x<10?"0":"")+x.toFixed(1);}
 
-/* ---------------- season + start-time logic ---------------- */
-function startTimeFor(date){const m=date.getMonth(); // Apr-Sep (3..8) => 17:00 winter window, else 17:15
-  return (m>=3&&m<=8)?"17:00":"17:15";}
-function seasonFor(date){
-  const m=date.getMonth(),day=date.getDate();
-  // Winter window: 16 Apr - 31 Aug  (rules: 16 Apr–29 Aug; use through Aug)
-  if((m===3&&day>=16)||m===4||m===5||m===6||m===7) return "Winter";
-  // Triple S: ~5 Nov - 4 Feb (special summer sub-series)
-  if((m===10&&day>=5)||m===11||m===0||(m===1&&day<=4)) return "Triple S";
-  return "Summer";
-}
+/* ---------------- season + start-time logic ----------------
+   Calendar lives in tt-series.js. 2026/27 uses the poster dates.
+   Other seasons keep the generic Triple S window. Start time is the
+   existing club clock (17:00 winter / 17:15 summer) — the poster has no time. */
+function startTimeFor(date){return TTSeries.startTimeFor(date);}
+function seasonFor(date){return TTSeries.seasonFor(date);}
 function defaultCourse(season){
   if(season==="Winter")return "winter_2lap";
   if(season==="Triple S")return "triples";
+  if(TTSeries.isSeriesSeason(season))return "sss_2026";
   return "summer_long";
+}
+function seasonPill(season){
+  const series=TTSeries.isSeriesSeason(season);
+  const cls=season==="Winter"?"winter":(season==="Triple S"||series)?"triples":"summer";
+  return `<span class="pill ${cls}">${series?"SSS 2026/27":season}</span>`;
+}
+function seriesTonightHtml(spec){
+  const kind=spec.kind==="standard"?"":`<div style="margin-top:4px"><b>${TTSeries.kindTitle(spec.kind)}</b> — ${
+    spec.kind==="dry-run"?"Vat-die-Krok and Vat-die-Likkewaan. The poster does not say whether this night scores.":"Vat-die-Krok and Vat-die-Likkewaan."}</div>`;
+  return `<div class="hintbox"><b>${spec.long.seriesName}</b> and <b>${spec.short.seriesName}</b> — 2026/27.${kind}
+    <div style="margin-top:6px"><b>${spec.long.leagueName}</b> · 2027 K1 · ${spec.long.style}<br>${spec.long.structure} = <b>${spec.long.km.toFixed(1)} km</b></div>
+    <div style="margin-top:6px"><b>${spec.short.leagueName}</b> · 2027 K1 · ${spec.short.style}<br>${spec.short.structure} = <b>${spec.short.km.toFixed(1)} km</b></div>
+    <div style="margin-top:6px">🦺 <b>${TTSeries.PFD}</b></div>
+    <div class="small" style="margin-top:6px">${TTSeries.START_NOTE}</div></div>
+    <div class="warnbox">${TTSeries.SCORING_SHORT}</div>`;
 }
 
 /* ============================================================= TONIGHT */
@@ -875,23 +896,31 @@ function renderTonight(){
   const d=nextThursday();const key=ymd(d);const season=seasonFor(d);
   const start=startTimeFor(d);const sunset=sunsetFor(d);
   const duty=S.roster.find(r=>r.date===key);
+  const spec=TTSeries.specFor(d);
   const plan=coursePlan(d);
   const longKm=longKmVal(), lsKm=longShortKmVal(), shKm=shortKmVal();
   const lk=plan.long*longKm+plan.extra*lsKm, sk=plan.short*shKm;
   const lapsEl=$("#tnLaps");
   if(lapsEl){
     const tNow=S.trials.find(x=>x.date===key);
-    lapsEl.innerHTML=lapStepperHtml(plan)+(tNow&&tNow.special&&tNow.special.name
+    lapsEl.innerHTML=lapStepperHtml(plan, spec)+(tNow&&tNow.special&&tNow.special.name
       ? `<div class="warnbox">⭐ Special time trial is on — it overrides the long-course lap count. Untick it on Capture to use the laps above.</div>`:"");
   }
+  const help=$("#tnLapHelp");
+  if(help) help.textContent=spec
+    ? "Series night. Time 3 laps on each course: 2 time-trial laps, the run, then 1 time-trial lap. The run is part of the poster distance, not an extra short lap. The sunset suggestion does not change this course."
+    : "Laps for tonight. Long and short are separate — 4 and 4 is fine. The sunset line is only a suggestion for the long course.";
+  const sugBtn=$("#tnUseSug"); if(sugBtn) sugBtn.style.display=spec?"none":"";
+  const distLabel=$("#tnDistLabel"); if(distLabel) distLabel.textContent=spec?"Krok / Likkewaan (km)":"Long / short (km)";
 
   $("#tnTitle").textContent = (key===ymd(new Date())?"Today — ":"") + d.toLocaleDateString("en-ZA",{weekday:"long",day:"numeric",month:"long"});
-  $("#tnSub").textContent="Rietvlei Dam time trial";
+  $("#tnSub").textContent=spec?"Rietvlei Dam · 2026/27 series":"Rietvlei Dam time trial";
   $("#tnStart").textContent=start;
   $("#tnDist").textContent=(()=>{const tNow=S.trials.find(x=>x.date===key);
     if(tNow&&tNow.special&&+tNow.special.km)return (+tNow.special.km).toFixed(1)+" km";
+    if(spec) return spec.long.km.toFixed(1)+" / "+spec.short.km.toFixed(1);
     return lk.toFixed(1)+" / "+sk.toFixed(1);})();
-  $("#tnSeason").innerHTML=`<span class="pill ${season==="Winter"?"winter":season==="Triple S"?"triples":"summer"}">${season}</span>`;
+  $("#tnSeason").innerHTML=seasonPill(season)+(spec&&spec.kind!=="standard"?` <span class="pill triples">${TTSeries.kindTitle(spec.kind)}</span>`:"");
   $("#tnSunset").textContent=sunset+"  ·  off water before dark";
   $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
   currentWeather().then(w=>{const el=$("#tnWeather");if(el)el.textContent=weatherLine(w);}).catch(()=>{});
@@ -904,8 +933,10 @@ function renderTonight(){
   const tTon=S.trials.find(x=>x.date===key);
   if(tTon&&tTon.special&&tTon.special.name)
     note+=`<div class="hintbox">⭐ <b>Special time trial tonight: ${tTon.special.name}</b>${+tTon.special.km?` — ${(+tTon.special.km).toFixed(1)} km`:""}${tTon.special.laps?` over ${tTon.special.laps} lap(s)`:""}.</div>`;
-  else {const sg=suggestCourse(d);const lk=(sg.long*longKmVal()+sg.longShort*longShortKmVal());
-    note+=`<div class="warnbox">Sunset ~${sunset}. Suggested long course: <b>${courseLabel(sg.long,sg.longShort)}</b> (~${lk.toFixed(1)} km) — back-markers should be finishing their last lap as the sun sets.</div>`;}
+  else if(spec) note+=seriesTonightHtml(spec);
+  else {const sg=suggestCourse(d);const sugKm=(sg.long*longKmVal()+sg.longShort*longShortKmVal());
+    note+=`<div class="warnbox">Sunset ~${sunset}. Suggested long course: <b>${courseLabel(sg.long,sg.longShort)}</b> (~${sugKm.toFixed(1)} km) — back-markers should be finishing their last lap as the sun sets.</div>`;
+    if(TTSeries.inSeasonWindow(key)) note+=`<div class="hintbox">Ordinary Thursday time trial. ${TTSeries.offWeekReason(key)}</div>`;}
   if(d.getMonth()===7) note+=`<div class="hintbox">🚻 <b>August is Mixed K2 month!</b> Pair up — one man + one woman in a K2 scores in the Mixed League (own trophy, own bragging rights).</div>`;
   if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
   $("#tnNote").innerHTML=note;
@@ -919,17 +950,41 @@ $("#tnLaps").addEventListener("change",e=>{
   commitTonightLaps(inp.dataset.which, inp.value, false);
 });
 $("#tnUseSug").addEventListener("click",()=>{
-  const d=nextThursday(); const sg=suggestCourse(d); const p=coursePlan(d);
+  const d=nextThursday();
+  if(TTSeries.specFor(d)){toast("Series night — poster course stays");return;}
+  const sg=suggestCourse(d); const p=coursePlan(d);
   const t=ensureTrialForTonight();
   t.lapsLong=sg.long; t.longShortLaps=sg.longShort; t.lapsShort=p.short;
   save(); renderTonight(); toast("Long course set to "+courseLabel(sg.long, sg.longShort));
 });
+function seriesAnnounce(d, spec, duty, notes){
+  const key=ymd(d), start=startTimeFor(d);
+  const kind=spec.kind==="dry-run"
+    ? "🧪 *Dry run* — Vat-die-Krok and Vat-die-Likkewaan. The poster does not say whether this night scores."
+    : spec.kind==="final"
+    ? "🏁 *Final* — Vat-die-Krok and Vat-die-Likkewaan."
+    : "⭐ *Super Serious Series & Splash & Dash* — 2026/27";
+  const lines=[
+    `🛶 *CCC Time Trial — ${fmtDate(key)}*`,
+    kind,
+    `⏰ Start: *${start}*`,
+    `📏 *${spec.long.seriesName} / ${spec.long.leagueName}* (2027 K1): ${spec.long.structure} = *${spec.long.km.toFixed(1)} km*`,
+    `📏 *${spec.short.seriesName} / ${spec.short.leagueName}* (2027 K1): ${spec.short.structure} = *${spec.short.km.toFixed(1)} km*`,
+    `🧑‍⚖️ Timekeeper: *${duty?duty.who:"NOT ASSIGNED — please volunteer"}*`,
+    `🌅 Sunset ~${sunsetFor(d)}`,
+    `🦺 *${TTSeries.PFD}*`
+  ];
+  if(notes) lines.push("📝 "+notes);
+  lines.push("📲 App: https://tinyurl.com/2b9qc7qg","","See you on the water!");
+  return lines.join("\n");
+}
 $("#btnAnnounce").addEventListener("click",()=>{
   const d=nextThursday();const key=ymd(d);
   const start=startTimeFor(d);const cc=tonightCourseDesc(d);
   const duty=S.roster.find(r=>r.date===key);
   const notes=$("#tnNotes").value.trim();
-  const msg=
+  const spec=TTSeries.specFor(d);
+  const msg=spec?seriesAnnounce(d,spec,duty,notes):
 `🛶 *CCC Time Trial — ${fmtDate(key)}*
 ⏰ Start: *${start}*
 📏 Tonight: *${cc.label}*
@@ -949,7 +1004,16 @@ async function buildSocialMsg(){
   const notes=($("#tnNotes")&&$("#tnNotes").value.trim())||"";
   const fc=await fetchForecast(d);
   const dl=_damLatest||await fetchDam();
-  const lines=[
+  const spec=TTSeries.specFor(d);
+  const lines=spec?[
+    `🛶 *CCC Time Trial — ${fmtDate(key)}*`,
+    spec.kind==="dry-run"?"🧪 *Dry run* — Vat-die-Krok and Vat-die-Likkewaan":spec.kind==="final"?"🏁 *Final* — Vat-die-Krok and Vat-die-Likkewaan":"⭐ *Super Serious Series & Splash & Dash* — 2026/27",
+    `⏰ Start *${start}* · Rietvlei Dam`,
+    `📏 ${spec.long.seriesName} / ${spec.long.leagueName}: ${spec.long.structure} = ${spec.long.km.toFixed(1)} km`,
+    `📏 ${spec.short.seriesName} / ${spec.short.leagueName}: ${spec.short.structure} = ${spec.short.km.toFixed(1)} km`,
+    `🌅 Sunset ~${sunsetFor(d)} — be off the water before dark`,
+    `🦺 ${TTSeries.PFD}`,
+  ]:[
     `🛶 *CCC Time Trial — ${fmtDate(key)}*`,
     `⏰ Start *${start}* · Rietvlei Dam`,
     `📏 ${cc.label}`,
@@ -977,9 +1041,11 @@ function renderRoster(){
     const past=r.date<today;
     const isNext=r.date===nextKey;
     const mem=S.members.find(m=>(m.first+" "+(m.last||"")).trim().toLowerCase()===r.who.toLowerCase()||m.first.toLowerCase()===r.who.toLowerCase());
+    const spec=TTSeries.specFor(r.date);
+    const seriesTag=spec?` <span class="pill triples">${spec.kind==="standard"?"SSS":TTSeries.kindTitle(spec.kind)}</span>`:"";
     return `<div class="duty ${isNext?"next":""}" style="${past?"opacity:.45":""}">
       <span class="d">${fmtDate(r.date)}</span>
-      <span class="grow"><b>${r.who}</b>${isNext?' <span class="pill summer">next</span>':""}</span>
+      <span class="grow"><b>${r.who}</b>${seriesTag}${isNext?' <span class="pill summer">next</span>':""}</span>
       <button class="sm wa" data-remind="${r.date}">remind</button>
       <button class="sm ghost" data-swap="${r.date}">swap</button>
     </div>`;
@@ -992,9 +1058,12 @@ function renderRoster(){
 }
 function dutyMemberPhone(who){const m=S.members.find(m=>(m.first+" "+(m.last||"")).trim().toLowerCase()===who.toLowerCase()||m.first.toLowerCase()===who.toLowerCase());return m&&m.phone?m.phone:"";}
 function remind(date){
-  const r=S.roster.find(x=>x.date===date);if(!r)return;const season=seasonFor(new Date(date+"T12:00:00"));
-  const start=startTimeFor(new Date(date+"T12:00:00"));
-  const msg=`Hi ${r.who.split(" ")[0]} 👋 reminder: you're on *timekeeping duty* for the CCC time trial on *${fmtDate(date)}*. Start ${start}. Please be at the dam 10 min early with a stopwatch. If you can't make it, arrange a swap (a timekeeper who paddles makes the trial unofficial).
+  const r=S.roster.find(x=>x.date===date);if(!r)return;
+  const when=new Date(date+"T12:00:00");
+  const start=startTimeFor(when);
+  const spec=TTSeries.specFor(when);
+  const seriesBit=spec?` ${TTSeries.reminderLine(spec)}`:"";
+  const msg=`Hi ${r.who.split(" ")[0]} 👋 reminder: you're on *timekeeping duty* for the CCC time trial on *${fmtDate(date)}*. Start ${start}.${seriesBit} Please be at the dam 10 min early with a stopwatch. If you can't make it, arrange a swap (a timekeeper who paddles makes the trial unofficial).
 📲 App: https://tinyurl.com/2b9qc7qg
 Thanks!`;
   shareWhatsApp(msg, dutyMemberPhone(r.who));
@@ -1106,6 +1175,8 @@ function forecastLine(w){if(!w)return"";
 function tonightCourseDesc(d){
   const t=S.trials.find(x=>x.date===ymd(d));
   if(t&&t.special&&t.special.name)return {label:t.special.name+(+t.special.km?` (${(+t.special.km).toFixed(1)} km)`:""), km:+t.special.km||0};
+  const spec=TTSeries.specFor(d);
+  if(spec) return {label:spec.long.label+" "+spec.long.km.toFixed(1)+" km, "+spec.short.label+" "+spec.short.km.toFixed(1)+" km", km:spec.long.km};
   const p=coursePlan(d);
   const longKm=longKmVal(), lsKm=longShortKmVal(), shKm=shortKmVal();
   const lk=p.long*longKm+p.extra*lsKm, sk=p.short*shKm;
@@ -1157,15 +1228,21 @@ let capFilter="ALL", _clock=null;
 function defaultLaps(season){
   if(season==="Winter")   return {long:2, short:3};
   if(season==="Triple S") return {long:3, short:3};
+  if(TTSeries.isSeriesSeason(season)) return {long:TTSeries.LONG.laps, short:TTSeries.SHORT.laps};
   return {long:5, short:3}; // Summer
 }
 function ensureTrialForTonight(){
   const d=nextThursday();const key=ymd(d);
   let t=S.trials.find(x=>x.date===key);
-  if(!t){const season=seasonFor(d);const dl=defaultLaps(season);const duty=S.roster.find(r=>r.date===key);
+  if(!t){const stamped=TTSeries.stampNewTrial(d);const dl=defaultLaps(stamped.season);const duty=S.roster.find(r=>r.date===key);
     const sg=suggestCourse(d); // sunset-driven, year-round (winter short -> summer 4 long + 1 short)
-    t={id:"t"+Date.now(),date:key,season,start:startTimeFor(d),timekeeper:duty?duty.who:"",
-       buoyShort:false,startedAt:null,lapsLong:sg.long,longShortLaps:sg.longShort,lapsShort:dl.short};
+    // Series nights take the poster laps. Ordinary nights keep the sunset suggestion.
+    t={id:"t"+Date.now(),date:key,season:stamped.season,start:stamped.start,timekeeper:duty?duty.who:"",
+       buoyShort:false,startedAt:null,
+       lapsLong:stamped.lapsLong!=null?stamped.lapsLong:sg.long,
+       longShortLaps:stamped.longShortLaps!=null?stamped.longShortLaps:sg.longShort,
+       lapsShort:stamped.lapsShort!=null?stamped.lapsShort:dl.short};
+    if(stamped.series) t.series=stamped.series;
     S.trials.push(t);save();}
   S.capSel=t.id;return t;
 }
@@ -1205,10 +1282,17 @@ function lapKm(course){return course==="short"?shortKmVal():longKmVal();}
 function trialOf(e){return S.trials.find(t=>t.id===e.trialId);}
 function courseKm(t,course){if(!t)return 0;
   if(course!=="short"&&t.special&&+t.special.km)return +t.special.km; // special TT: fixed distance
+  const seriesKm=TTSeries.seriesCourseKm(t,course); if(seriesKm!=null)return seriesKm; // poster total, run included
   return course==="short"?((t.lapsShort||0)*shortKmVal()):((t.lapsLong||0)*longKmVal()+(t.longShortLaps||0)*longShortKmVal());}
 function courseName(t,course){ // label for a course on a given night ("Long" or the special's name)
-  if(course==="short")return "Short";
-  return (t&&t.special&&t.special.name)?t.special.name:"Long";}
+  if(course==="short") return (t&&t.series&&t.series.shortLabel)?t.series.shortLabel:"Short";
+  if(t&&t.special&&t.special.name) return t.special.name;
+  if(t&&t.series&&t.series.longLabel) return t.series.longLabel;
+  return "Long";}
+function courseTabName(t,course){
+  if(t&&TTSeries.isSeriesTrial(t)) return course==="short"?"Likkewaan":"Vat-die-Krok";
+  return courseName(t,course);
+}
 function entryKm(e){return courseKm(trialOf(e),e.course);}
 function entrySpeed(e){if(e.noSpeed)return null; // non-standard distance that night — speed not comparable
   const tot=entryTotal(e);const sp=tot?entryKm(e)/(tot/3600):null;return (sp&&sp<40)?sp:null;} // km/h
@@ -1243,19 +1327,25 @@ function clampLap(which,v){
 }
 // What tonight will be paddled: the trial's laps if one exists, else the sunset suggestion + season short default.
 function coursePlan(date){
+  const spec=TTSeries.specFor(date);
   const sg=suggestCourse(date), dl=defaultLaps(seasonFor(date));
   const t=S.trials.find(x=>x.date===ymd(date));
+  // No trial yet on a series night: show the poster laps, not the sunset suggestion.
+  if(spec && !t) return {long:spec.long.laps, extra:0, short:spec.short.laps};
   return {
     long: t&&t.lapsLong?+t.lapsLong:sg.long,
     extra: t?+(t.longShortLaps||0):sg.longShort,
     short: t&&t.lapsShort?+t.lapsShort:dl.short
   };
 }
-function lapStepperHtml(p){
+function lapStepperHtml(p, spec){
   const longKm=longKmVal(), lsKm=longShortKmVal(), shKm=shortKmVal();
   const lk=p.long*longKm+p.extra*lsKm, sk=p.short*shKm;
   const step=(which,val)=>{const min=which==="extra"?0:1, max=LAP_CAP[which];
     return `<span class="stepper"><button type="button" class="sec" data-dir="-1" data-which="${which}">−</button><input data-which="${which}" type="number" inputmode="numeric" min="${min}" max="${max}" value="${val}"><button type="button" class="sec" data-dir="1" data-which="${which}">+</button></span>`;};
+  if(spec) return `<div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>${spec.long.label}</b><div class="muted">${p.long} time-trial laps · poster <b>${spec.long.km.toFixed(1)} km</b>, run included</div></div>${step("long",p.long)}</div>
+    <div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>+ short laps</b> on the long course<div class="muted">poster uses none — the run is not an extra lap</div></div>${step("extra",p.extra)}</div>
+    <div class="row wrap" style="justify-content:space-between"><div class="grow"><b>${spec.short.label}</b><div class="muted">${p.short} time-trial laps · poster <b>${spec.short.km.toFixed(1)} km</b>, run included</div></div>${step("short",p.short)}</div>`;
   return `<div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>Long course</b><div class="muted">${p.long} × ${longKm} km${p.extra?` + ${p.extra} × ${lsKm} km`:""} = <b>${lk.toFixed(1)} km</b></div></div>${step("long",p.long)}</div>
     <div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>+ short laps</b> on the long course<div class="muted">optional, each ${lsKm} km</div></div>${step("extra",p.extra)}</div>
     <div class="row wrap" style="justify-content:space-between"><div class="grow"><b>Short course</b><div class="muted">${p.short} × ${shKm} km = <b>${sk.toFixed(1)} km</b></div></div>${step("short",p.short)}</div>`;
@@ -1270,14 +1360,16 @@ function commitTonightLaps(which, value, isDelta){
 }
 function fmtSpeed(s){return s==null?"":s.toFixed(1)+" km/h";}
 // a member's best total on a course strictly before a date (for improvement tracking)
-function priorBest(memberId,course,beforeDate){let best=null;
+function trialBucket(t){return TTSeries.isSeriesTrial(t)?"series:"+t.series.id:"tt";}
+function priorBest(memberId,course,beforeDate,bucket){let best=null;
   S.entries.forEach(e=>{if(!e.memberIds||!e.memberIds.includes(memberId)||e.course!==course)return;
     const tr=S.trials.find(t=>t.id===e.trialId);if(!tr||tr.date>=beforeDate||!entryDone(e,tr))return;
+    if(trialBucket(tr)!==bucket)return; // a paddle+run series time is not a paddle PB
     const tot=entryTotal(e);if(best==null||tot<best)best=tot;});
   return best;}
 function entryImproved(e){const tr=S.trials.find(t=>t.id===e.trialId);if(!tr||!entryDone(e,tr))return false;
-  const tot=entryTotal(e);
-  return (e.memberIds||[]).some(id=>{const pb=priorBest(id,e.course,tr.date);return pb!=null&&tot<pb;});}
+  const tot=entryTotal(e); const bucket=trialBucket(tr);
+  return (e.memberIds||[]).some(id=>{const pb=priorBest(id,e.course,tr.date,bucket);return pb!=null&&tot<pb;});}
 
 /* --- new race / suggestions --- */
 // Most recent PRIOR trial to copy a starting line-up from — skips special time trials, whose
@@ -1299,11 +1391,11 @@ function renderCapture(){
   const has=trials.length>0;
   ["raceCard","boatsCard","addCard"].forEach(id=>{const el=$("#"+id);if(el)el.style.display=has?"":"none";});
   if(!has){sel.innerHTML='<option>— no race yet —</option>';$("#capTrialInfo").textContent="Tap “＋ New race”, or “Start capturing” from the Tonight tab.";$("#capSuggest").innerHTML="";return;}
-  sel.innerHTML=trials.map(t=>`<option value="${t.id}">${fmtDate(t.date)} · ${t.season}</option>`).join("");
+  sel.innerHTML=trials.map(t=>`<option value="${t.id}">${fmtDate(t.date)} · ${t.season}${t.series&&t.series.kind==="dry-run"?" · dry run":t.series&&t.series.kind==="final"?" · final":""}</option>`).join("");
   if(!S.capSel||!trials.some(t=>t.id===S.capSel))S.capSel=trials[0].id;
   sel.value=S.capSel;
   const t=currentTrial();
-  $("#capTrialInfo").textContent=`${t.season} · start ${t.start} · timekeeper ${t.timekeeper||"—"}`;
+  $("#capTrialInfo").textContent=`${t.season} · start ${t.start} · timekeeper ${t.timekeeper||"—"}${t.series&&t.series.kind&&t.series.kind!=="standard"?" · "+TTSeries.kindTitle(t.series.kind):""}`;
   $("#capBoat").innerHTML=BOATS.map(b=>`<option>${b}</option>`).join("");
   $("#lapsLong").value=t.lapsLong||2; $("#lapsShort").value=t.lapsShort||3; $("#longShortLaps").value=t.longShortLaps||0;
   // sunset suggestion for the long course
@@ -1313,11 +1405,14 @@ function renderCapture(){
   if(sp){$("#capSpecName").value=sp.name||"";$("#capSpecKm").value=sp.km||"";$("#capSpecLaps").value=sp.laps||"";}
   const sg=suggestCourse(new Date(t.date+"T12:00:00"));
   const lk=courseKm(t,"long"), sk=courseKm(t,"short");
+  const seriesNight=TTSeries.isSeriesTrial(t);
   $("#lapSuggest").innerHTML=sp
     ? `<span class="muted">⭐ Special: <b>${sp.name||"unnamed"}</b> — ${(+sp.km||0).toFixed(1)} km over ${sp.laps||"?"} lap(s). Normal long-course laps are ignored tonight.</span>`
+    : seriesNight
+    ? `<span class="muted"><b>${t.series.longLabel}</b> ${(+t.series.longKm).toFixed(1)} km · <b>${t.series.shortLabel}</b> ${(+t.series.shortKm).toFixed(1)} km. ${TTSeries.LONG.structure}. ${TTSeries.SHORT.structure}. ${TTSeries.PFD} Tap the 3 time-trial laps; the run sits between lap 2 and lap 3.</span>`
     : `<span class="muted">Long: <b>${courseLabel(t.lapsLong||2,t.longShortLaps||0)}</b> (${lk.toFixed(1)} km). Short: <b>${t.lapsShort||3} laps</b> (${sk.toFixed(1)} km). `
       +`Sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b>.</span>`
-      +((sg.long!==(t.lapsLong||2)||sg.longShort!==(t.longShortLaps||0))?` <button class="sm sec" id="lapApply" style="padding:4px 8px">Use suggestion</button>`:"");
+      +((!seriesNight&&(sg.long!==(t.lapsLong||2)||sg.longShort!==(t.longShortLaps||0)))?` <button class="sm sec" id="lapApply" style="padding:4px 8px">Use suggestion</button>`:"");
   if($("#lapApply"))$("#lapApply").onclick=()=>{t.lapsLong=sg.long;t.longShortLaps=sg.longShort;save();renderCapture();toast("Long course set to "+courseLabel(sg.long,sg.longShort));};
   $("#capWeather").textContent=t.weather?("🌤 Conditions at the gun: "+weatherLine(t.weather)):"";
   {const dl=t.damLevel||_damLatest;const el=$("#capDam");
@@ -1442,7 +1537,7 @@ function rebuildPaddlerSelects(){
 }
 function renderEntrants(){
   const t=currentTrial();if(!t)return;
-  $("#capFilter").innerHTML=["ALL","long","short"].map(f=>`<button class="${f===capFilter?"on":""}" data-f="${f}">${f==="ALL"?"All":courseName(t,f)}</button>`).join("");
+  $("#capFilter").innerHTML=["ALL","long","short"].map(f=>`<button class="${f===capFilter?"on":""}" data-f="${f}">${f==="ALL"?"All":courseTabName(t,f)}</button>`).join("");
   $$("#capFilter button").forEach(b=>b.onclick=()=>{capFilter=b.dataset.f;renderEntrants();});
   let list=S.entries.filter(e=>e.trialId===t.id);
   if(capFilter!=="ALL")list=list.filter(e=>e.course===capFilter);
@@ -1725,10 +1820,37 @@ function computeMixedStandings(courseFilter){
   });
   return Object.values(teams).sort((a,b)=>b.pts-a.pts||(a.best||9e9)-(b.best||9e9));
 }
+function seriesStandHtml(){
+  const rows=TTSeries.calendarRows().map(r=>`<tr><td>${fmtDate(r.date)}</td><td><b>${r.title}</b><div class="small muted">${r.detail}</div></td><td class="num">9.3 / 5.3</td></tr>`).join("");
+  const offs=TTSeries.offWeekThursdays().map(d=>`<li>${fmtDate(d)} — ${TTSeries.offWeekReason(d)}</li>`).join("");
+  const L=TTSeries.LONG, Sh=TTSeries.SHORT;
+  return `<div class="hintbox"><b>${L.seriesName}</b> and <b>${Sh.seriesName}</b>. Both are 2027 K1 leagues.
+    <div style="margin-top:6px"><b>${L.leagueName}</b> — ${L.style}.<br>${L.structure} = <b>${L.km.toFixed(1)} km</b>.</div>
+    <div style="margin-top:6px"><b>${Sh.leagueName}</b> — ${Sh.style}.<br>${Sh.structure} = <b>${Sh.km.toFixed(1)} km</b>.</div>
+    <div style="margin-top:6px">🦺 <b>${TTSeries.PFD}</b></div>
+    <div class="small" style="margin-top:6px">${TTSeries.START_NOTE}</div></div>
+    <div class="warnbox">${TTSeries.SCORING_GAP}</div>
+    <table><thead><tr><th>Date</th><th>Night</th><th class="num">km</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="small" style="margin-top:10px;font-weight:800">Thursdays in this season that are not series nights</div>
+    <ul class="small muted" style="margin:6px 0 0;padding-left:18px">${offs}</ul>
+    <div class="small muted" style="margin-top:8px">No paddlers or results are loaded for these nights. A timekeeper starts a race from Tonight on the night itself.</div>`;
+}
 function renderStandings(){
-  const seasons=["Summer","Winter","Triple S","Mixed K2"];
-  $("#standTabs").innerHTML=seasons.map(s=>`<button class="${s===standSeason?"on":""}" data-s="${s}">${s}</button>`).join("");
+  const seasons=[["Summer","Summer"],["Winter","Winter"],["Triple S","Triple S"],["Mixed K2","Mixed K2"],[TTSeries.SEASON,"2026/27"]];
+  $("#standTabs").innerHTML=seasons.map(([id,label])=>`<button class="${id===standSeason?"on":""}" data-s="${id}">${label}</button>`).join("");
   $$("#standTabs button").forEach(b=>b.onclick=()=>{standSeason=b.dataset.s;renderStandings();});
+  const exportRow=$("#standExportRow");
+  if(TTSeries.isSeriesSeason(standSeason)){
+    $("#standClass").style.display="none";
+    $("#standCourseTabs").style.display="none";
+    if(exportRow) exportRow.style.display="none";
+    $("#standTitle").textContent="2026/27 series";
+    $("#standTable").innerHTML=seriesStandHtml();
+    renderRecords();
+    return;
+  }
+  $("#standCourseTabs").style.display="";
+  if(exportRow) exportRow.style.display="";
   const mixed=standSeason==="Mixed K2";
   $("#standClass").style.display=mixed?"none":"";
   $("#standClass").innerHTML='<option value="ALL">All boats</option><option value="K*">🛶 Kayaks (K1–K3)</option><option value="S*">🏄 Surfskis (S1–S3)</option>'
@@ -1784,6 +1906,7 @@ function ensureXLSX(){return window.XLSX?Promise.resolve():new Promise((res,rej)
   const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
   s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
 async function exportExcel(doEmail){
+  if(TTSeries.isSeriesSeason(standSeason)){toast("2026/27 series points are not on the poster");return;}
   const season=standSeason;const {standAOA,resAOA}=buildAOAs(season);
   if(standAOA.length<=1){toast("No results for "+season+" yet");return;}
   let b64,filename,mime,blob;
@@ -1925,8 +2048,10 @@ function renderDistances(){
     </div>
     <div class="hintbox" id="distPreview" style="margin-top:8px"></div>
     <button id="dSave" style="margin-top:10px">Save settings</button>`;
-  const sg=suggestCourse(nextThursday());
-  $("#distPreview").innerHTML=`Next Thursday: sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b> (back-marker ${pace} km/h, off ${marg} min before sunset).`;
+  const nxt=nextThursday(); const sg=suggestCourse(nxt); const spec=TTSeries.specFor(nxt);
+  $("#distPreview").innerHTML=spec
+    ? `Next Thursday is a 2026/27 series night: <b>${spec.long.leagueName} ${spec.long.km.toFixed(1)} km</b> and <b>${spec.short.leagueName} ${spec.short.km.toFixed(1)} km</b>. The sunset suggestion is not used.`
+    : `Next Thursday: sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b> (back-marker ${pace} km/h, off ${marg} min before sunset).`;
   $("#dSave").onclick=()=>{
     S.settings.longLapKm=+$("#dLong").value||2.3;
     S.settings.shortLapKm=+$("#dShort").value||1.4;
@@ -1946,10 +2071,13 @@ function memberStats(mid){
     const sp=entrySpeed(e);
     const grp=S.entries.filter(x=>x.trialId===t.id&&x.course===e.course&&entryDone(x,t))
       .sort(cmpEntry);
-    st.results.push({date:t.date,course:e.course,boat:e.boat,total:tot,speed:sp,
-      pos:grp.findIndex(x=>x.id===e.id)+1,of:grp.length,pb:entryImproved(e)});
-    if(entryImproved(e))st.pbCount++;
+    const seriesNight=TTSeries.isSeriesTrial(t);
+    st.results.push({date:t.date,course:e.course,boat:e.boat,total:tot,speed:seriesNight?null:sp,
+      pos:grp.findIndex(x=>x.id===e.id)+1,of:grp.length,pb:!seriesNight&&entryImproved(e),
+      series:seriesNight,seriesLabel:seriesNight?(e.course==="short"?t.series.shortLabel:t.series.longLabel):""});
+    if(!seriesNight&&entryImproved(e))st.pbCount++;
     st.total++;if(!st.firstDate||t.date<st.firstDate)st.firstDate=t.date;
+    if(seriesNight)return; // paddle+run nights stay in the results list and out of paddle PBs
     const cf=st.craft[(e.boat||"K")[0]==="S"?"ski":"kayak"]=st.craft[(e.boat||"K")[0]==="S"?"ski":"kayak"]||{n:0,best:null,bestSpeed:null};
     cf.n++;if(cf.best==null||tot<cf.best)cf.best=tot;if(sp&&(cf.bestSpeed==null||sp>cf.bestSpeed))cf.bestSpeed=sp;
     const c=st.courses[e.course]=st.courses[e.course]||{n:0,best:null,bestDate:null,bestSpeed:null,spSum:0,spN:0,wins:0};
@@ -1982,7 +2110,7 @@ function clubRecords(){
   const out={course:{long:{},short:{}},lap:{long:null,short:null}};
   const better=(cur,cand,hiGood)=>cur==null||(hiGood?cand.val>cur.val:cand.val<cur.val);
   S.entries.forEach(e=>{
-    const t=trialOf(e);if(!t||!entryDone(e,t))return;
+    const t=trialOf(e);if(!t||!entryDone(e,t)||TTSeries.isSeriesTrial(t))return;
     const tot=entryTotal(e);if(tot==null)return;
     const sp=entrySpeed(e);
     const crew=(e.memberIds||[]).map(id=>S.members.find(m=>m.id===id)).filter(Boolean);
@@ -2023,7 +2151,7 @@ function renderRecords(){
     if(r.lap.long)h+=line("Long lap",r.lap.long,true);
     if(r.lap.short)h+=line("Short lap",r.lap.short,true);
   }
-  h+=`<div class="small muted" style="margin-top:6px">Course records rank by average speed, so nights with different lap counts compare fairly.</div>`;
+  h+=`<div class="small muted" style="margin-top:6px">Course records rank by average speed, so nights with different lap counts compare fairly. 2026/27 series nights include a run, so they stay out of these paddle records.</div>`;
   el.innerHTML=any?h:"";
   el.style.display=any?"":"none";
 }
@@ -2040,8 +2168,9 @@ function showMemberStats(mid){
     if(st.fadeN){const f=st.fadeSum/st.fadeN;
       body+=row("Lap fade",(f>=0?"+":"−")+Math.abs(f).toFixed(0)+"s <span class='muted small'>lap 2 vs lap 1 avg</span>");}
     const season=seasonFor(new Date());
-    const lg=computeStandings(season,"ALL","ALL");const i=lg.findIndex(r=>r.id===mid);
-    if(i>=0)body+=row(season+" league","#"+(i+1)+" · "+lg[i].pts+" pts");
+    if(TTSeries.isSeriesSeason(season)) body+=row("This Thursday","2026/27 series night. Points for the K1 leagues are not on the poster.");
+    else {const lg=computeStandings(season,"ALL","ALL");const i=lg.findIndex(r=>r.id===mid);
+      if(i>=0)body+=row(season+" league","#"+(i+1)+" · "+lg[i].pts+" pts");}
     ["long","short"].forEach(cse=>{const c=st.courses[cse];if(!c)return;
       body+=`<div class="small" style="margin-top:10px;font-weight:800;color:var(--muted)">${cse==="long"?"LONG":"SHORT"} COURSE</div>`;
       body+=row("Races",c.n+(c.wins?` · 🥇×${c.wins}`:""));
@@ -2060,8 +2189,9 @@ function showMemberStats(mid){
     }
     body+=`<div class="small" style="margin-top:10px;font-weight:800;color:var(--muted)">RECENT RESULTS</div>`;
     st.results.slice(0,6).forEach(r=>{
-      body+=row(fmtDate(r.date)+` <span class="tag ${r.course}">${r.boat}</span>`,
-        fmtClock(r.total)+` · P${r.pos}/${r.of}`+((r.speed&&r.speed<40)?" · "+r.speed.toFixed(1)+"km/h":"")+(r.pb?" ⬆PB":""));
+      const tag=r.series?r.seriesLabel:r.course;
+      body+=row(fmtDate(r.date)+` <span class="tag ${r.course}">${r.series?tag:r.boat}</span>`,
+        fmtClock(r.total)+` · P${r.pos}/${r.of}`+(r.series?"":((r.speed&&r.speed<40)?" · "+r.speed.toFixed(1)+"km/h":"")+(r.pb?" ⬆PB":"")));
     });
   }
   openModal("📊 "+memberLabel(mid),body,null,"Close");
@@ -2199,7 +2329,7 @@ $$("nav button").forEach(b=>b.onclick=()=>show(b.dataset.v));
 function renderAll(){renderTonight();renderRoster();renderCapture();renderStandings();renderMembers();renderSyncInfo();applyAdminUI();}
 $("#verTag").textContent="v"+APP_VERSION;
 // default standings season = current season
-standSeason=seasonFor(new Date());if(standSeason==="Triple S")standSeason="Triple S";
+standSeason=seasonFor(new Date());
 renderAll();
 applyAdminUI();maybeLock();
 fetchDam().then(()=>{if($("#view-tonight")&&$("#view-tonight").classList.contains("on"))renderTonight();}).catch(()=>{}); // load dam level (same-origin, never scrapes DWS)
