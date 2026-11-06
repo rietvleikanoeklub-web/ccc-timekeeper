@@ -3,7 +3,7 @@
 Single-file PWA for Centurion Canoe Club Thursday time trials. Mirrors the CCC Bar Tab
 pattern (one `index.html`, deploy to GitHub Pages, cloud sync via Google Apps Script + Drive JSON).
 
-**Status:** v0.5.0. **LIVE:** https://rietvleikanoeklub-web.github.io/ccc-timekeeper/
+**Status:** v0.46.1. **LIVE:** https://rietvleikanoeklub-web.github.io/ccc-timekeeper/
 Installable PWA (offline app shell). Works offline (localStorage) and syncs to Google Drive once the
 Apps Script backend below is connected.
 
@@ -36,7 +36,22 @@ Open the app → **Members → Cloud sync** → paste the `/exec` URL → **Save
 ```
 python3 -m http.server 8765 --directory .
 # open http://localhost:8765
+node tests/series2026.test.js
+node tests/scoring.test.js
 ```
+
+## 2026/27 series
+Super Serious Series / Vat-die-Krok (9.3 km) and Splash & Dash / Vat-die-Likkewaan (5.3 km)
+run on the poster dates only. Other Thursdays in that window stay ordinary time trials.
+Poster nights are classified as Triple S and use that league's existing points.
+Long and short stay separate course groups. There is no separate Splash & Dash
+points table, and the 4 Feb dry run is not given a score of its own. The code
+does not add Triple S results into the Summer table.
+PFDs are compulsory. Start time stays the club summer time, 17:15 SAST.
+
+Reminder emails and calendar descriptions pick up the series wording only after
+`CCC_TT_AppsScript.gs` is pasted into the club Apps Script project and redeployed.
+The timekeeping app itself does not need that redeploy.
 
 ## What works
 - **Tonight** — auto-computes the next Thursday's season, start time (17:00 winter / 17:15 summer),

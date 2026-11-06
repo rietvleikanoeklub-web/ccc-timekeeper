@@ -61,6 +61,8 @@ tr:last-child td{border-bottom:0}
   Spotted a mistake? Tell the timekeeper or an admin and it gets fixed on the spot.
 </div>
 
+<script src="tt-series.js"></script>
+<script src="tt-score.js"></script>
 <script>
 const CLOUD="https://script.google.com/macros/s/AKfycbxxcou1HOOavDik0Bmp7etOGdXRW4QZfMoHZMyuDJt-pTFX55le4sG8Wt4gMB9s1qI6wg/exec";
 let S={members:[],trials:[],entries:[],settings:{}};
@@ -72,14 +74,17 @@ const longKm =()=>+S.settings.longLapKm||2.3;
 const shortKm=()=>+S.settings.shortLapKm||1.4;
 function courseKm(t,c){if(!t)return 0;
   if(c!=="short"&&t.special&&+t.special.km)return +t.special.km;
+  const seriesKm=TTSeries.seriesCourseKm(t,c); if(seriesKm!=null)return seriesKm;
   return c==="short"?((t.lapsShort||0)*shortKm()):((t.lapsLong||0)*longKm()+(t.longShortLaps||0)*shortKm());}
-function courseName(t,c){if(c==="short")return "Short";return (t&&t.special&&t.special.name)?t.special.name:"Long";}
-function lapTarget(t,c){if(c==="short")return t.lapsShort||2;
-  if(t.special&&+t.special.laps)return +t.special.laps;
-  return (t.lapsLong||2)+(t.longShortLaps||0);}
-const entryTotal=e=>(e.total!=null)?e.total:(e.splits&&e.splits.length?e.splits[e.splits.length-1]:null);
-const cmpET=(a,b)=>((a.e&&a.e.partial?1:0)-(b.e&&b.e.partial?1:0))||(a.total-b.total); // partial boats rank last
-const entryDone =(e,t)=>e.done===true||(e.splits?e.splits.length:0)>=lapTarget(t,e.course);
+function courseName(t,c){
+  if(c==="short") return (t&&t.series&&t.series.shortLabel)?t.series.shortLabel:"Short";
+  if(t&&t.special&&t.special.name) return t.special.name;
+  if(t&&t.series&&t.series.longLabel) return t.series.longLabel;
+  return "Long";}
+function lapTarget(t,c){return TTScore.lapTarget(t,c);}
+const entryTotal=e=>TTScore.entryTotal(e);
+const cmpET=(a,b)=>TTScore.cmpET(a,b);
+const entryDone=(e,t)=>TTScore.entryDone(e,t);
 function entrySpeed(e){const t=S.trials.find(x=>x.id===e.trialId);const tot=entryTotal(e);
   if(e.noSpeed||!t||!tot)return null;const v=courseKm(t,e.course)/(tot/3600);return (v>0&&v<40)?v:null;}
 function fmtClock(s){if(s==null)return"—";const m=Math.floor(s/60),x=s%60;return m+":"+(x<10?"0":"")+x.toFixed(1);}
@@ -87,31 +92,10 @@ function fmtDate(s){const d=new Date(s+"T12:00:00");
   return d.toLocaleDateString("en-ZA",{weekday:"long",day:"numeric",month:"long"});}
 function memberName(id){const m=S.members.find(x=>x.id===id);return m?((m.first+" "+(m.last||"")).trim()):"—";}
 function crewName(e){return (e.memberIds||[]).map(memberName).join(" & ");}
-const pointsForPosition=p=>p<=9?(11-p):1;
-function seasonFor(d){const m=d.getMonth(),day=d.getDate();
-  if((m===3&&day>=16)||m===4||m===5||m===6||m===7)return "Winter";
-  if((m===10&&day>=5)||m===11||m===0||(m===1&&day<=4))return "Triple S";
-  return "Summer";}
-
-/* Same scoring as the app: ranked within course group, 10-9-…-2 top nine then 1,
-   +3 for beating your own season best, +10 for every 10 trials paddled. */
+const pointsForPosition=p=>TTScore.pointsForPosition(p);
+function seasonFor(d){return TTSeries.seasonFor(d);}
 function computeStandings(season){
-  const trials=S.trials.filter(t=>t.season===season),tally={};
-  trials.forEach(t=>["long","short"].forEach(course=>{
-    const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
-      .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort(cmpET);
-    grp.forEach((g,i)=>{const pts=pointsForPosition(i+1);
-      (g.e.memberIds||[]).forEach(id=>{
-        const r=tally[id]=tally[id]||{pts:0,best:null,count:0,name:memberName(id),courseBest:{}};
-        r.pts+=pts;r.count++;
-        const cb=r.courseBest[course];
-        if(!t.buoyShort&&cb!=null&&g.total<cb)r.pts+=3;
-        if(cb==null||g.total<cb)r.courseBest[course]=g.total;
-        if(r.best==null||g.total<r.best)r.best=g.total;});});
-  }));
-  Object.values(tally).forEach(r=>{r.pts+=Math.floor(r.count/10)*10;});
-  return Object.entries(tally).map(([id,r])=>({id,...r}))
-    .sort((a,b)=>b.pts-a.pts||(a.best||9e9)-(b.best||9e9));
+  return TTScore.scoreLeague(S.trials,S.entries,season,"ALL","ALL",memberName);
 }
 
 /* ---------------- latest trial ---------------- */
@@ -120,9 +104,11 @@ function renderLatest(){
     .sort((a,b)=>a.date.localeCompare(b.date));
   const t=done[done.length-1];
   if(!t){$("#latest").innerHTML='<h2>Latest results</h2><div class="meta">No results captured yet — check back after Thursday night.</div>';return;}
+  const series=TTSeries.isSeriesTrial(t);
   let h=`<h2>${t.special&&t.special.name?'<span class="star">⭐</span> ':""}${esc(fmtDate(t.date))}</h2>
-    <div class="meta">${esc(t.season)} league${t.timekeeper?" · timekeeper "+esc(t.timekeeper):""}${
+    <div class="meta">${esc(series?(TTSeries.kindTitle(t.series.kind)+" · "+t.season):t.season+(series?"":" league"))}${t.timekeeper?" · timekeeper "+esc(t.timekeeper):""}${
       t.weather?` · ${Math.round(t.weather.temp)}°C, wind ${Math.round(t.weather.wind)} km/h`:""}</div>`;
+  if(series) h+=`<div class="meta">${esc(TTSeries.LONG.structure)} = ${TTSeries.LONG.km.toFixed(1)} km · ${esc(TTSeries.SHORT.structure)} = ${TTSeries.SHORT.km.toFixed(1)} km. ${esc(TTSeries.PFD)}</div>`;
   if(t.damLevel&&t.damLevel.pct_full!=null){const dl=t.damLevel;
     h+=`<div class="meta">🌊 ${esc(dl.name||"Rietvlei")} ${(+dl.pct_full).toFixed(1)}% full`
       +(dl.volume_mcm!=null&&dl.fsc_mcm!=null?` · ${(+dl.volume_mcm).toFixed(2)}/${(+dl.fsc_mcm).toFixed(2)} Mm³`:"")
