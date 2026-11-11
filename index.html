@@ -28,14 +28,17 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.46.2 Normal series nights are Triple S (9.3 km) and Splash & Dash (5.3 km).
+          Vat-die-Krok and Vat-die-Likkewaan are only the 4 Feb dry run and the 11 Feb final,
+          with distance left as TBC and laps set by the timekeeper. Scoring is unchanged.
    0.46.1 Poster nights stay in the existing Triple S league and keep its points
           (10 to 1 within each course, +3 season-best unless buoy-short, +10 per 10 trials).
           Long and short stay separate groups. No separate Splash & Dash table and no
           dry-run score. 4 Feb stays Triple S, as the old 4 Feb rule already did.
    0.46.0 2026/27 series from the club poster. Exact dates only (12, 19, 26 Nov 2026;
           3 Dec 2026; 14, 21, 28 Jan 2027; 4 Feb 2027 dry run; 11 Feb 2027 final).
-          SSS / Vat-die-Krok is 2 time-trial laps + run with boat + 1 time-trial lap = 9.3 km.
-          Splash & Dash / Vat-die-Likkewaan is 2 short laps + run without boat + 1 short lap = 5.3 km.
+          A normal series night is Triple S (2 time-trial laps + run with boat + 1 lap = 9.3 km)
+          and Splash & Dash (2 short laps + run without boat + 1 short lap = 5.3 km).
           Off-week and holiday-week Thursdays in that window stay ordinary summer time trials.
           Historical Triple S (generic 5 Nov–4 Feb in other seasons) is unchanged. Start stays 17:15 SAST.
           PFDs compulsory, no exceptions, on series nights. No seeded results.
@@ -533,7 +536,7 @@
 <script src="tt-score.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "0.46.1";
+const APP_VERSION = "0.46.2";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -883,11 +886,20 @@ function seasonPill(season){
   return `<span class="pill ${cls}">${season}</span>`;
 }
 function seriesTonightHtml(spec){
-  const kind=spec.kind==="standard"?"":`<div style="margin-top:4px"><b>${TTSeries.kindTitle(spec.kind)}</b> — ${
-    spec.kind==="dry-run"?"Vat-die-Krok and Vat-die-Likkewaan. The poster does not say whether this night scores.":"Vat-die-Krok and Vat-die-Likkewaan."}</div>`;
-  return `<div class="hintbox"><b>${spec.long.seriesName}</b> and <b>${spec.short.seriesName}</b> — 2026/27.${kind}
-    <div style="margin-top:6px"><b>${spec.long.leagueName}</b> · 2027 K1 · ${spec.long.style}<br>${spec.long.structure} = <b>${spec.long.km.toFixed(1)} km</b></div>
-    <div style="margin-top:6px"><b>${spec.short.leagueName}</b> · 2027 K1 · ${spec.short.style}<br>${spec.short.structure} = <b>${spec.short.km.toFixed(1)} km</b></div>
+  const names=spec.names||TTSeries.namesForKind(spec.kind);
+  if(names.distanceTbc){
+    const which=spec.kind==="dry-run"?"Dry run":"Final";
+    const score=spec.kind==="dry-run"?" The poster does not say whether the dry run scores. It stays in the Triple S league, with no separate dry-run score.":"";
+    return `<div class="hintbox"><b>${which}</b> — <b>Vat-die-Krok</b> and <b>Vat-die-Likkewaan</b>.
+      <div style="margin-top:6px">The poster does not give the distance or the lap count. <b>Distance TBC.</b> Set the laps on the night.</div>
+      <div style="margin-top:6px">🦺 <b>${TTSeries.PFD}</b></div>
+      <div class="small" style="margin-top:6px">${TTSeries.START_NOTE}${score}</div></div>
+      <div class="warnbox">${TTSeries.SCORING_SHORT}</div>`;
+  }
+  return `<div class="hintbox"><b>Two races tonight</b> — <b>Triple S</b> and <b>Splash & Dash</b>.
+    <div style="margin-top:6px"><b>Triple S</b> · ${names.longTitle}<br>${names.longStyle}. ${names.longStructure} = <b>${names.longKm.toFixed(1)} km</b></div>
+    <div style="margin-top:6px"><b>Splash & Dash</b> · ${names.shortTitle}<br>${names.shortStyle}. ${names.shortStructure} = <b>${names.shortKm.toFixed(1)} km</b></div>
+    <div style="margin-top:6px">Boats start on Triple S unless you assign them to Splash & Dash.</div>
     <div style="margin-top:6px">🦺 <b>${TTSeries.PFD}</b></div>
     <div class="small" style="margin-top:6px">${TTSeries.START_NOTE}</div></div>
     <div class="warnbox">${TTSeries.SCORING_SHORT}</div>`;
@@ -909,17 +921,20 @@ function renderTonight(){
       ? `<div class="warnbox">⭐ Special time trial is on — it overrides the long-course lap count. Untick it on Capture to use the laps above.</div>`:"");
   }
   const help=$("#tnLapHelp");
-  if(help) help.textContent=spec
-    ? "Series night. Time 3 laps on each course: 2 time-trial laps, the run, then 1 time-trial lap. The run is part of the poster distance, not an extra short lap. The sunset suggestion does not change this course."
+  if(help) help.textContent=spec&&spec.distanceTbc
+    ? "Vat-die-Krok and Vat-die-Likkewaan. The poster does not give the distance or the lap count. Set the laps for tonight. Distance TBC."
+    : spec
+    ? "Two races: Triple S and Splash & Dash. Time 3 laps on each: 2 time-trial laps, the run, then 1 time-trial lap. The run is part of the poster distance, not an extra short lap."
     : "Laps for tonight. Long and short are separate — 4 and 4 is fine. The sunset line is only a suggestion for the long course.";
-  const sugBtn=$("#tnUseSug"); if(sugBtn) sugBtn.style.display=spec?"none":"";
-  const distLabel=$("#tnDistLabel"); if(distLabel) distLabel.textContent=spec?"Krok / Likkewaan (km)":"Long / short (km)";
+  const sugBtn=$("#tnUseSug"); if(sugBtn) sugBtn.style.display=(spec&&!spec.distanceTbc)?"none":"";
+  const distLabel=$("#tnDistLabel"); if(distLabel) distLabel.textContent=spec&&spec.distanceTbc?"Distance":spec?"Triple S / Splash & Dash (km)":"Long / short (km)";
 
   $("#tnTitle").textContent = (key===ymd(new Date())?"Today — ":"") + d.toLocaleDateString("en-ZA",{weekday:"long",day:"numeric",month:"long"});
-  $("#tnSub").textContent=spec?"Rietvlei Dam · 2026/27 series":"Rietvlei Dam time trial";
+  $("#tnSub").textContent=spec?(TTSeries.pickerLabel(d)||"Rietvlei Dam time trial"):"Rietvlei Dam time trial";
   $("#tnStart").textContent=start;
   $("#tnDist").textContent=(()=>{const tNow=S.trials.find(x=>x.date===key);
     if(tNow&&tNow.special&&+tNow.special.km)return (+tNow.special.km).toFixed(1)+" km";
+    if(spec&&spec.distanceTbc) return "TBC";
     if(spec) return spec.long.km.toFixed(1)+" / "+spec.short.km.toFixed(1);
     return lk.toFixed(1)+" / "+sk.toFixed(1);})();
   $("#tnSeason").innerHTML=seasonPill(season)+(spec&&spec.kind!=="standard"?` <span class="pill triples">${TTSeries.kindTitle(spec.kind)}</span>`:"");
@@ -953,25 +968,33 @@ $("#tnLaps").addEventListener("change",e=>{
 });
 $("#tnUseSug").addEventListener("click",()=>{
   const d=nextThursday();
-  if(TTSeries.specFor(d)){toast("Series night — poster course stays");return;}
+  const spec=TTSeries.specFor(d);
+  if(spec&&!spec.distanceTbc){toast("Series night — poster course stays");return;}
   const sg=suggestCourse(d); const p=coursePlan(d);
   const t=ensureTrialForTonight();
   t.lapsLong=sg.long; t.longShortLaps=sg.longShort; t.lapsShort=p.short;
   save(); renderTonight(); toast("Long course set to "+courseLabel(sg.long, sg.longShort));
 });
+function seriesMeasureLines(spec){
+  const names=spec.names||TTSeries.namesForKind(spec.kind);
+  if(names.distanceTbc) return [`📏 *Vat-die-Krok* and *Vat-die-Likkewaan* — distance TBC. Set the laps on the night.`];
+  return [
+    `📏 *Triple S* (${names.longTitle}): ${names.longStructure} = *${names.longKm.toFixed(1)} km*`,
+    `📏 *Splash & Dash* (${names.shortTitle}): ${names.shortStructure} = *${names.shortKm.toFixed(1)} km*`
+  ];
+}
 function seriesAnnounce(d, spec, duty, notes){
   const key=ymd(d), start=startTimeFor(d);
   const kind=spec.kind==="dry-run"
     ? "🧪 *Dry run* — Vat-die-Krok and Vat-die-Likkewaan. The poster does not say whether this night scores."
     : spec.kind==="final"
     ? "🏁 *Final* — Vat-die-Krok and Vat-die-Likkewaan."
-    : "⭐ *Super Serious Series & Splash & Dash* — 2026/27";
+    : "⭐ *Triple S + Splash & Dash*";
   const lines=[
     `🛶 *CCC Time Trial — ${fmtDate(key)}*`,
     kind,
     `⏰ Start: *${start}*`,
-    `📏 *${spec.long.seriesName} / ${spec.long.leagueName}* (2027 K1): ${spec.long.structure} = *${spec.long.km.toFixed(1)} km*`,
-    `📏 *${spec.short.seriesName} / ${spec.short.leagueName}* (2027 K1): ${spec.short.structure} = *${spec.short.km.toFixed(1)} km*`,
+    ...seriesMeasureLines(spec),
     `🧑‍⚖️ Timekeeper: *${duty?duty.who:"NOT ASSIGNED — please volunteer"}*`,
     `🌅 Sunset ~${sunsetFor(d)}`,
     `🦺 *${TTSeries.PFD}*`
@@ -1009,10 +1032,9 @@ async function buildSocialMsg(){
   const spec=TTSeries.specFor(d);
   const lines=spec?[
     `🛶 *CCC Time Trial — ${fmtDate(key)}*`,
-    spec.kind==="dry-run"?"🧪 *Dry run* — Vat-die-Krok and Vat-die-Likkewaan":spec.kind==="final"?"🏁 *Final* — Vat-die-Krok and Vat-die-Likkewaan":"⭐ *Super Serious Series & Splash & Dash* — 2026/27",
+    spec.kind==="dry-run"?"🧪 *Dry run* — Vat-die-Krok and Vat-die-Likkewaan":spec.kind==="final"?"🏁 *Final* — Vat-die-Krok and Vat-die-Likkewaan":"⭐ *Triple S + Splash & Dash*",
     `⏰ Start *${start}* · Rietvlei Dam`,
-    `📏 ${spec.long.seriesName} / ${spec.long.leagueName}: ${spec.long.structure} = ${spec.long.km.toFixed(1)} km`,
-    `📏 ${spec.short.seriesName} / ${spec.short.leagueName}: ${spec.short.structure} = ${spec.short.km.toFixed(1)} km`,
+    ...seriesMeasureLines(spec),
     `🌅 Sunset ~${sunsetFor(d)} — be off the water before dark`,
     `🦺 ${TTSeries.PFD}`,
   ]:[
@@ -1044,7 +1066,7 @@ function renderRoster(){
     const isNext=r.date===nextKey;
     const mem=S.members.find(m=>(m.first+" "+(m.last||"")).trim().toLowerCase()===r.who.toLowerCase()||m.first.toLowerCase()===r.who.toLowerCase());
     const spec=TTSeries.specFor(r.date);
-    const seriesTag=spec?` <span class="pill triples">${spec.kind==="standard"?"SSS":TTSeries.kindTitle(spec.kind)}</span>`:"";
+    const seriesTag=spec?` <span class="pill triples">${spec.kind==="standard"?"Triple S":TTSeries.kindTitle(spec.kind)}</span>`:"";
     return `<div class="duty ${isNext?"next":""}" style="${past?"opacity:.45":""}">
       <span class="d">${fmtDate(r.date)}</span>
       <span class="grow"><b>${r.who}</b>${seriesTag}${isNext?' <span class="pill summer">next</span>':""}</span>
@@ -1278,17 +1300,17 @@ function lapKm(course){return course==="short"?shortKmVal():longKmVal();}
 function trialOf(e){return S.trials.find(t=>t.id===e.trialId);}
 function courseKm(t,course){if(!t)return 0;
   if(course!=="short"&&t.special&&+t.special.km)return +t.special.km; // special TT: fixed distance
+  const view=TTSeries.viewFor(t);
+  if(view){ if(view.distanceTbc) return null; return course==="short"?view.shortKm:view.longKm; }
   const seriesKm=TTSeries.seriesCourseKm(t,course); if(seriesKm!=null)return seriesKm; // poster total, run included
   return course==="short"?((t.lapsShort||0)*shortKmVal()):((t.lapsLong||0)*longKmVal()+(t.longShortLaps||0)*longShortKmVal());}
-function courseName(t,course){ // label for a course on a given night ("Long" or the special's name)
-  if(course==="short") return (t&&t.series&&t.series.shortLabel)?t.series.shortLabel:"Short";
+function courseName(t,course){ // label for a course on a given night ("Long" or the series name)
+  const view=t&&TTSeries.viewFor(t);
+  if(view) return course==="short"?view.shortLabel:view.longLabel;
+  if(course==="short") return "Short";
   if(t&&t.special&&t.special.name) return t.special.name;
-  if(t&&t.series&&t.series.longLabel) return t.series.longLabel;
   return "Long";}
-function courseTabName(t,course){
-  if(t&&TTSeries.isSeriesTrial(t)) return course==="short"?"Likkewaan":"Vat-die-Krok";
-  return courseName(t,course);
-}
+function courseTabName(t,course){return courseName(t,course);}
 function entryKm(e){return courseKm(trialOf(e),e.course);}
 function entrySpeed(e){if(e.noSpeed)return null; // non-standard distance that night — speed not comparable
   const tot=entryTotal(e);const sp=tot?entryKm(e)/(tot/3600):null;return (sp&&sp<40)?sp:null;} // km/h
@@ -1327,7 +1349,7 @@ function coursePlan(date){
   const sg=suggestCourse(date), dl=defaultLaps(seasonFor(date));
   const t=S.trials.find(x=>x.date===ymd(date));
   // No trial yet on a series night: show the poster laps, not the sunset suggestion.
-  if(spec && !t) return {long:spec.long.laps, extra:0, short:spec.short.laps};
+  if(spec && !spec.distanceTbc && !t) return {long:spec.long.laps, extra:0, short:spec.short.laps};
   return {
     long: t&&t.lapsLong?+t.lapsLong:sg.long,
     extra: t?+(t.longShortLaps||0):sg.longShort,
@@ -1339,6 +1361,9 @@ function lapStepperHtml(p, spec){
   const lk=p.long*longKm+p.extra*lsKm, sk=p.short*shKm;
   const step=(which,val)=>{const min=which==="extra"?0:1, max=LAP_CAP[which];
     return `<span class="stepper"><button type="button" class="sec" data-dir="-1" data-which="${which}">−</button><input data-which="${which}" type="number" inputmode="numeric" min="${min}" max="${max}" value="${val}"><button type="button" class="sec" data-dir="1" data-which="${which}">+</button></span>`;};
+  if(spec&&spec.distanceTbc) return `<div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>${spec.long.label}</b><div class="muted">${p.long} laps · <b>distance TBC</b></div></div>${step("long",p.long)}</div>
+    <div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>+ short laps</b> on ${spec.long.label}<div class="muted">optional — the poster does not set this</div></div>${step("extra",p.extra)}</div>
+    <div class="row wrap" style="justify-content:space-between"><div class="grow"><b>${spec.short.label}</b><div class="muted">${p.short} laps · <b>distance TBC</b></div></div>${step("short",p.short)}</div>`;
   if(spec) return `<div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>${spec.long.label}</b><div class="muted">${p.long} time-trial laps · poster <b>${spec.long.km.toFixed(1)} km</b>, run included</div></div>${step("long",p.long)}</div>
     <div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>+ short laps</b> on the long course<div class="muted">poster uses none — the run is not an extra lap</div></div>${step("extra",p.extra)}</div>
     <div class="row wrap" style="justify-content:space-between"><div class="grow"><b>${spec.short.label}</b><div class="muted">${p.short} time-trial laps · poster <b>${spec.short.km.toFixed(1)} km</b>, run included</div></div>${step("short",p.short)}</div>`;
@@ -1376,7 +1401,9 @@ function loadLastWeekInto(t){const p=priorTrialWithEntries(t);if(!p)return 0;let
   const present=new Set(S.entries.filter(e=>e.trialId===t.id).flatMap(e=>e.memberIds));
   S.entries.filter(e=>e.trialId===p.id).forEach(e=>{
     if(!e.memberIds.some(id=>present.has(id))){
-      S.entries.push({id:"e"+Date.now().toString(36)+n,trialId:t.id,memberIds:[...e.memberIds],boat:e.boat,course:e.course,splits:[],lastTap:0});
+      const dest=TTSeries.viewFor(t), src=TTSeries.viewFor(p);
+      const course=(dest&&!src)?"long":(e.course||"long"); // a normal list defaults onto Triple S / Vat-die-Krok
+      S.entries.push({id:"e"+Date.now().toString(36)+n,trialId:t.id,memberIds:[...e.memberIds],boat:e.boat,course,splits:[],lastTap:0});
       e.memberIds.forEach(id=>present.add(id));n++;}});
   save();return n;}
 $("#capNew").addEventListener("click",()=>{const t=ensureTrialForTonight();S.capSel=t.id;save();renderCapture();toast("Race ready for "+fmtDate(t.date));});
@@ -1387,11 +1414,16 @@ function renderCapture(){
   const has=trials.length>0;
   ["raceCard","boatsCard","addCard"].forEach(id=>{const el=$("#"+id);if(el)el.style.display=has?"":"none";});
   if(!has){sel.innerHTML='<option>— no race yet —</option>';$("#capTrialInfo").textContent="Tap “＋ New race”, or “Start capturing” from the Tonight tab.";$("#capSuggest").innerHTML="";return;}
-  sel.innerHTML=trials.map(t=>`<option value="${t.id}">${fmtDate(t.date)} · ${t.season}${t.series&&t.series.kind==="dry-run"?" · dry run":t.series&&t.series.kind==="final"?" · final":""}</option>`).join("");
+  sel.innerHTML=trials.map(t=>{const pick=TTSeries.pickerLabel(t.date);return `<option value="${t.id}">${fmtDate(t.date)} · ${pick||t.season}</option>`;}).join("");
   if(!S.capSel||!trials.some(t=>t.id===S.capSel))S.capSel=trials[0].id;
   sel.value=S.capSel;
   const t=currentTrial();
-  $("#capTrialInfo").textContent=`${t.season} · start ${t.start} · timekeeper ${t.timekeeper||"—"}${t.series&&t.series.kind&&t.series.kind!=="standard"?" · "+TTSeries.kindTitle(t.series.kind):""}`;
+  const pick=TTSeries.pickerLabel(t.date);
+  $("#capTrialInfo").textContent=`${pick||t.season} · start ${t.start} · timekeeper ${t.timekeeper||"—"}`;
+  const view=TTSeries.viewFor(t);
+  const courseNow=$("#capCourse").value||"long";
+  $("#capCourse").innerHTML=`<option value="long">${view?view.longLabel:"Long"}</option><option value="short">${view?view.shortLabel:"Short"}</option>`;
+  $("#capCourse").value=courseNow==="short"?"short":"long";
   $("#capBoat").innerHTML=BOATS.map(b=>`<option>${b}</option>`).join("");
   $("#lapsLong").value=t.lapsLong||2; $("#lapsShort").value=t.lapsShort||3; $("#longShortLaps").value=t.longShortLaps||0;
   // sunset suggestion for the long course
@@ -1405,7 +1437,9 @@ function renderCapture(){
   $("#lapSuggest").innerHTML=sp
     ? `<span class="muted">⭐ Special: <b>${sp.name||"unnamed"}</b> — ${(+sp.km||0).toFixed(1)} km over ${sp.laps||"?"} lap(s). Normal long-course laps are ignored tonight.</span>`
     : seriesNight
-    ? `<span class="muted"><b>${t.series.longLabel}</b> ${(+t.series.longKm).toFixed(1)} km · <b>${t.series.shortLabel}</b> ${(+t.series.shortKm).toFixed(1)} km. ${TTSeries.LONG.structure}. ${TTSeries.SHORT.structure}. ${TTSeries.PFD} Tap the 3 time-trial laps; the run sits between lap 2 and lap 3.</span>`
+    ? (view.distanceTbc
+      ? `<span class="muted"><b>${view.longLabel}</b> and <b>${view.shortLabel}</b>. Distance TBC — set the laps above. New boats start on ${view.longLabel}. ${TTSeries.PFD}</span>`
+      : `<span class="muted"><b>${view.longLabel}</b> ${view.longKm.toFixed(1)} km · <b>${view.shortLabel}</b> ${view.shortKm.toFixed(1)} km. ${view.longStructure}. ${view.shortStructure}. New boats start on ${view.longLabel}. ${TTSeries.PFD}</span>`)
     : `<span class="muted">Long: <b>${courseLabel(t.lapsLong||2,t.longShortLaps||0)}</b> (${lk.toFixed(1)} km). Short: <b>${t.lapsShort||3} laps</b> (${sk.toFixed(1)} km). `
       +`Sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b>.</span>`
       +((!seriesNight&&(sg.long!==(t.lapsLong||2)||sg.longShort!==(t.longShortLaps||0)))?` <button class="sm sec" id="lapApply" style="padding:4px 8px">Use suggestion</button>`:"");
@@ -1622,7 +1656,7 @@ function editBoat(eid){
     +splits.map((s,i)=>`<input class="ebT" data-i="${i}" value="${fmtClock(s)}" inputmode="decimal" style="margin-bottom:6px">`).join(""):"";
   const body=`<div class="row wrap">
       <div style="width:110px"><label>Boat</label><select id="ebBoat">${BOATS.map(b=>`<option ${b===e.boat?"selected":""}>${b}</option>`).join("")}</select></div>
-      <div class="grow"><label>Course</label><select id="ebCourse"><option value="long" ${e.course==="long"?"selected":""}>Long</option><option value="short" ${e.course==="short"?"selected":""}>Short</option></select></div>
+      <div class="grow"><label>Course</label><select id="ebCourse"><option value="long" ${e.course!=="short"?"selected":""}>${TTSeries.viewFor(t)?TTSeries.viewFor(t).longLabel:"Long"}</option><option value="short" ${e.course==="short"?"selected":""}>${TTSeries.viewFor(t)?TTSeries.viewFor(t).shortLabel:"Short"}</option></select></div>
     </div>
     <div id="ebPaddlers">${padFields(e.boat,e.memberIds)}</div>
     ${timeFields}
@@ -1716,7 +1750,8 @@ function buildResults(t){
       .map(e=>({e,total:entryTotal(e)})).sort(cmpET);
     if(!g.length)return;
     const km=orderOnly?0:courseKm(t,course);
-    lines.push("\n*"+courseName(t,course).toUpperCase()+(course==="short"?" COURSE":(t.special?"":" COURSE"))+(km?` (${km.toFixed(1)} km)`:"")+"*");
+    const distBit=TTSeries.viewFor(t)&&TTSeries.viewFor(t).distanceTbc?" — distance TBC":(km?` (${Number(km).toFixed(1)} km)`:"");
+    lines.push("\n*"+courseName(t,course).toUpperCase()+(course==="short"?" COURSE":(t.special?"":" COURSE"))+distBit+"*");
     g.forEach((x,i)=>{const sp=orderOnly?null:entrySpeed(x.e),imp=!orderOnly&&entryImproved(x.e);
       lines.push(`${i+1}. ${entryName(x.e)} (${x.e.boat})${orderOnly?"":` — ${fmtClock(x.total)}`}${sp?" · "+sp.toFixed(1)+"km/h":""}${imp?" ⬆PB":""}`);});
   });
@@ -1789,12 +1824,13 @@ function computeMixedStandings(courseFilter){
   return Object.values(teams).sort((a,b)=>b.pts-a.pts||(a.best||9e9)-(b.best||9e9));
 }
 function seriesStandHtml(){
-  const rows=TTSeries.calendarRows().map(r=>`<tr><td>${fmtDate(r.date)}</td><td><b>${r.title}</b><div class="small muted">${r.detail}</div></td><td class="num">9.3 / 5.3</td></tr>`).join("");
+  const rows=TTSeries.calendarRows().map(r=>`<tr><td>${fmtDate(r.date)}</td><td><b>${r.title}</b><div class="small muted">${r.detail}</div></td><td class="num">${r.km}</td></tr>`).join("");
   const offs=TTSeries.offWeekThursdays().map(d=>`<li>${fmtDate(d)} — ${TTSeries.offWeekReason(d)}</li>`).join("");
   const L=TTSeries.LONG, Sh=TTSeries.SHORT;
-  return `<div class="hintbox"><b>${L.seriesName}</b> and <b>${Sh.seriesName}</b>. Both are 2027 K1 leagues.
-    <div style="margin-top:6px"><b>${L.leagueName}</b> — ${L.style}.<br>${L.structure} = <b>${L.km.toFixed(1)} km</b>.</div>
-    <div style="margin-top:6px"><b>${Sh.leagueName}</b> — ${Sh.style}.<br>${Sh.structure} = <b>${Sh.km.toFixed(1)} km</b>.</div>
+  return `<div class="hintbox"><b>${L.label}</b> (${L.seriesName}) and <b>${Sh.label}</b> (${Sh.seriesName}) on a normal series night.
+    <div style="margin-top:6px"><b>${L.label}</b> — ${L.style}.<br>${L.structure} = <b>${L.km.toFixed(1)} km</b>.</div>
+    <div style="margin-top:6px"><b>${Sh.label}</b> — ${Sh.style}.<br>${Sh.structure} = <b>${Sh.km.toFixed(1)} km</b>.</div>
+    <div style="margin-top:6px">Vat-die-Krok and Vat-die-Likkewaan are only 4 Feb (dry run) and 11 Feb (final). Their distance is not on the poster.</div>
     <div style="margin-top:6px">🦺 <b>${TTSeries.PFD}</b></div>
     <div class="small" style="margin-top:6px">${TTSeries.START_NOTE}</div></div>
     <div class="hintbox">${TTSeries.SCORING_NOTE}</div>
@@ -2017,8 +2053,10 @@ function renderDistances(){
     <div class="hintbox" id="distPreview" style="margin-top:8px"></div>
     <button id="dSave" style="margin-top:10px">Save settings</button>`;
   const nxt=nextThursday(); const sg=suggestCourse(nxt); const spec=TTSeries.specFor(nxt);
-  $("#distPreview").innerHTML=spec
-    ? `Next Thursday is a 2026/27 series night: <b>${spec.long.leagueName} ${spec.long.km.toFixed(1)} km</b> and <b>${spec.short.leagueName} ${spec.short.km.toFixed(1)} km</b>. The sunset suggestion is not used.`
+  $("#distPreview").innerHTML=spec&&spec.distanceTbc
+    ? `Next Thursday is <b>Vat-die-Krok</b> and <b>Vat-die-Likkewaan</b>. Distance TBC — set the laps on the night.`
+    : spec
+    ? `Next Thursday is <b>Triple S ${spec.long.km.toFixed(1)} km</b> and <b>Splash & Dash ${spec.short.km.toFixed(1)} km</b>. The sunset suggestion is not used.`
     : `Next Thursday: sunset ~${sg.sunset} → suggested <b>${courseLabel(sg.long,sg.longShort)}</b> (back-marker ${pace} km/h, off ${marg} min before sunset).`;
   $("#dSave").onclick=()=>{
     S.settings.longLapKm=+$("#dLong").value||2.3;
@@ -2042,7 +2080,7 @@ function memberStats(mid){
     const seriesNight=TTSeries.isSeriesTrial(t);
     st.results.push({date:t.date,course:e.course,boat:e.boat,total:tot,speed:seriesNight?null:sp,
       pos:grp.findIndex(x=>x.id===e.id)+1,of:grp.length,pb:!seriesNight&&entryImproved(e),
-      series:seriesNight,seriesLabel:seriesNight?(e.course==="short"?t.series.shortLabel:t.series.longLabel):""});
+      series:seriesNight,seriesLabel:seriesNight?(e.course==="short"?TTSeries.viewFor(t).shortLabel:TTSeries.viewFor(t).longLabel):""});
     if(!seriesNight&&entryImproved(e))st.pbCount++;
     st.total++;if(!st.firstDate||t.date<st.firstDate)st.firstDate=t.date;
     if(seriesNight)return; // paddle+run nights stay in the results list and out of paddle PBs

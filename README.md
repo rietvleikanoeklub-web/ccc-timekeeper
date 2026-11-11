@@ -3,7 +3,7 @@
 Single-file PWA for Centurion Canoe Club Thursday time trials. Mirrors the CCC Bar Tab
 pattern (one `index.html`, deploy to GitHub Pages, cloud sync via Google Apps Script + Drive JSON).
 
-**Status:** v0.46.1. **LIVE:** https://rietvleikanoeklub-web.github.io/ccc-timekeeper/
+**Status:** v0.46.2. **LIVE:** https://rietvleikanoeklub-web.github.io/ccc-timekeeper/
 Installable PWA (offline app shell). Works offline (localStorage) and syncs to Google Drive once the
 Apps Script backend below is connected.
 
@@ -41,8 +41,9 @@ node tests/scoring.test.js
 ```
 
 ## 2026/27 series
-Super Serious Series / Vat-die-Krok (9.3 km) and Splash & Dash / Vat-die-Likkewaan (5.3 km)
-run on the poster dates only. Other Thursdays in that window stay ordinary time trials.
+A normal series Thursday is Triple S (9.3 km) and Splash & Dash (5.3 km).
+Vat-die-Krok and Vat-die-Likkewaan are only the 4 Feb dry run and the 11 Feb final;
+the poster does not give their distance. Other Thursdays in that window stay ordinary time trials.
 Poster nights are classified as Triple S and use that league's existing points.
 Long and short stay separate course groups. There is no separate Splash & Dash
 points table, and the 4 Feb dry run is not given a score of its own. The code

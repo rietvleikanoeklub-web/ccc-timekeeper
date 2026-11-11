@@ -350,13 +350,17 @@ function seriesNight(d) {
   var key = Utilities.formatDate(d, 'Africa/Johannesburg', 'yyyy-MM-dd');
   var kind = SERIES_2026_NIGHTS[key];
   if (!kind) return null;
-  var head = kind === 'dry-run' ? 'DRY RUN for Vat-die-Krok and Vat-die-Likkewaan. '
-    : kind === 'final' ? 'FINAL for Vat-die-Krok and Vat-die-Likkewaan. ' : '';
-  var line = head
-    + 'Super Serious Series / Vat-die-Krok (2027 K1): 2 time trial laps + run with boat + 1 time trial lap = 9.3 km. '
-    + 'Splash & Dash / Vat-die-Likkewaan (2027 K1): 2 short time trial laps + run without boat + 1 short time trial lap = 5.3 km. '
-    + 'PFDs compulsory, no exceptions.';
-  if (kind === 'dry-run') line += ' The poster does not say whether the dry run scores.';
+  var line;
+  if (kind === 'standard') {
+    line = 'Two races: Triple S (Super Serious Series) — 2 time trial laps + run with boat + 1 time trial lap = 9.3 km. '
+      + 'Splash & Dash — 2 short time trial laps + run without boat + 1 short time trial lap = 5.3 km. '
+      + 'PFDs compulsory, no exceptions.';
+  } else {
+    line = (kind === 'dry-run' ? 'DRY RUN' : 'FINAL')
+      + ' — Vat-die-Krok and Vat-die-Likkewaan. The poster does not give the distance or lap count (distance TBC); the timekeeper sets the laps. '
+      + 'PFDs compulsory, no exceptions.';
+    if (kind === 'dry-run') line += ' The poster does not say whether the dry run scores.';
+  }
   return { kind: kind, line: line };
 }
 function fmtDateZA(d) { return Utilities.formatDate(d, Session.getScriptTimeZone(), 'EEE d MMM'); }
