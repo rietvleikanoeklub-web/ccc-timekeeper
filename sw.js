@@ -1,5 +1,5 @@
 /* CCC Timekeeper service worker — offline app shell, network-first (avoids stale versions). */
-const CACHE = "ccc-tk-v0.46.1"; // bump on each release so the new shell installs
+const CACHE = "ccc-tk-v0.46.2"; // bump on each release so the new shell installs
 const ASSETS = ["./", "./index.html", "./tt-series.js", "./tt-score.js", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", e => {

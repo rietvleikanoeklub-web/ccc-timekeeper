@@ -94,14 +94,22 @@ assert.strictEqual(dec.long.laps, 3);
 assert.strictEqual(dec.short.laps, 3);
 assert.strictEqual(dec.long.seriesName, "Super Serious Series (SSS)");
 assert.strictEqual(dec.short.seriesName, "Splash & Dash Series");
-assert.strictEqual(dec.long.leagueName, "Vat-die-Krok");
-assert.strictEqual(dec.short.leagueName, "Vat-die-Likkewaan");
+assert.strictEqual(dec.long.label, "Triple S");
+assert.strictEqual(dec.short.label, "Splash & Dash");
 assert.strictEqual(dec.long.style, "The original Dusi style club league");
 assert.strictEqual(dec.short.style, "The shorter Dusi style league");
 assert.strictEqual(dec.long.structure, "2 time trial laps + run with boat + 1 time trial lap");
 assert.strictEqual(dec.short.structure, "2 short time trial laps + run without boat + 1 short time trial lap");
-assert.strictEqual(dec.long.label, "SSS · Vat-die-Krok");
-assert.strictEqual(dec.short.label, "Splash & Dash · Vat-die-Likkewaan");
+assert.strictEqual(dec.distanceTbc, false);
+assert.strictEqual(TT.pickerLabel("2026-11-12"), "Triple S + Splash & Dash");
+assert.strictEqual(TT.pickerLabel("2027-01-14"), "Triple S + Splash & Dash");
+assert.strictEqual(TT.pickerLabel("2027-02-04"), "Vat-die-Krok + Vat-die-Likkewaan · dry run");
+assert.strictEqual(TT.pickerLabel("2027-02-11"), "Vat-die-Krok + Vat-die-Likkewaan · final");
+assert.strictEqual(TT.viewFor({date:"2026-11-12", series:{id:"2026-27", kind:"standard", longLabel:"SSS · Vat-die-Krok", shortLabel:"Splash & Dash · Vat-die-Likkewaan"}}).longLabel, "Triple S");
+assert.strictEqual(TT.viewFor({date:"2026-11-12"}).shortLabel, "Splash & Dash");
+assert.strictEqual(TT.viewFor({date:"2027-02-04"}).longLabel, "Vat-die-Krok");
+assert.strictEqual(TT.viewFor({date:"2027-02-11"}).shortLabel, "Vat-die-Likkewaan");
+assert.strictEqual(TT.viewFor({date:"2027-02-11", series:{longKm:9.3, shortKm:5.3, longLabel:"SSS · Vat-die-Krok"}}).distanceTbc, true);
 assert.strictEqual(TT.PFD, "PFDs compulsory, no exceptions");
 
 // Historical generic window, including the season that ended in Feb 2026.
@@ -163,8 +171,16 @@ assert.strictEqual(stamped.results, undefined);
 assert.strictEqual(stamped.members, undefined);
 assert.strictEqual(TT.stampNewTrial("2027-02-04").season, "Triple S");
 assert.strictEqual(TT.stampNewTrial("2027-02-04").series.kind, "dry-run");
+assert.strictEqual(TT.stampNewTrial("2027-02-04").series.longLabel, "Vat-die-Krok");
+assert.strictEqual(TT.stampNewTrial("2027-02-04").series.shortLabel, "Vat-die-Likkewaan");
+assert.strictEqual(TT.stampNewTrial("2027-02-04").series.distanceTbc, true);
+assert.strictEqual(TT.stampNewTrial("2027-02-04").lapsLong, undefined);
+assert.strictEqual(TT.seriesCourseKm(TT.stampNewTrial("2027-02-04"), "long"), null);
+assert.strictEqual(TT.seriesCourseKm(TT.stampNewTrial("2027-02-11"), "short"), null);
 assert.strictEqual(TT.stampNewTrial("2027-02-11").season, "Triple S");
 assert.strictEqual(TT.stampNewTrial("2027-02-11").series.kind, "final");
+assert.strictEqual(stamped.series.longLabel, "Triple S");
+assert.strictEqual(stamped.series.shortLabel, "Splash & Dash");
 
 // Ordinary and historical nights are not stamped as this series.
 const ordinary = TT.stampNewTrial("2026-06-25");
@@ -204,7 +220,14 @@ assert.strictEqual(TT.kindTitle("final"), "Final");
 assert.strictEqual(TT.kindTitle("standard"), "Series night");
 assert.match(TT.reminderLine(TT.specFor("2027-02-04")), /^Dry run/);
 assert.match(TT.reminderLine(TT.specFor("2027-02-11")), /^Final/);
+assert.match(TT.reminderLine(TT.specFor("2026-11-12")), /Triple S/);
+assert.match(TT.reminderLine(TT.specFor("2026-11-12")), /Splash & Dash/);
 assert.match(TT.reminderLine(TT.specFor("2026-11-12")), /9\.3 km/);
+assert.match(TT.reminderLine(TT.specFor("2027-02-04")), /^Dry run/);
+assert.match(TT.reminderLine(TT.specFor("2027-02-04")), /Vat-die-Krok/);
+assert.match(TT.reminderLine(TT.specFor("2027-02-04")), /Distance TBC/);
+assert.doesNotMatch(TT.reminderLine(TT.specFor("2026-11-12")), /Vat-die-Krok/);
+assert.doesNotMatch(TT.reminderLine(TT.specFor("2027-02-11")), /9\.3 km/);
 assert.match(TT.reminderLine(TT.specFor("2026-11-12")), /PFDs compulsory, no exceptions/);
 
 // Apps Script briefing dates stay locked to the same poster list.
@@ -213,8 +236,8 @@ const gsDates = [...gs.matchAll(/'(202[67]-\d{2}-\d{2})'\s*:\s*'(standard|dry-ru
 assert.deepStrictEqual(gsDates, expected);
 
 // App shell version, cache, preserved scoring, preserved lap fix, sanitised-sync guard.
-assert.match(html, /const APP_VERSION = "0\.46\.1"/);
-assert.match(sw, /const CACHE = "ccc-tk-v0\.46\.1"/);
+assert.match(html, /const APP_VERSION = "0\.46\.2"/);
+assert.match(sw, /const CACHE = "ccc-tk-v0\.46\.2"/);
 assert.match(sw, /tt-series\.js/);
 assert.match(sw, /tt-score\.js/);
 assert.match(html, /src="tt-series\.js"/);

@@ -22,8 +22,8 @@
   var START_NOTE = "Start time is the club's existing summer time trial time, 17:15 SAST. The poster does not state a time.";
   // Existing league scoring still applies. What the poster does not settle is
   // called out here and is not turned into a new rule.
-  var SCORING_NOTE = "These nights are the Triple S league and use the existing points: 10 to 1 within each course, +3 for a season-best unless a buoy was missing, and +10 per 10 trials. Long (SSS / Vat-die-Krok) and short (Splash & Dash / Vat-die-Likkewaan) are separate groups on the same night. There is no separate Splash & Dash points table. The poster does not say whether the 4 Feb dry run counts. 4 Feb stays Triple S, which is what the old 4 Feb rule already did, so no dry-run score was added or removed.";
-  var SCORING_SHORT = "Scored in the Triple S league with the existing points. Long and short are separate. The 4 Feb dry run is not given its own score.";
+  var SCORING_NOTE = "These nights are the Triple S league and use the existing points: 10 to 1 within each course, +3 for a season-best unless a buoy was missing, and +10 per 10 trials. On a normal series night the long group is Triple S and the short group is Splash & Dash. There is no separate Splash & Dash points table. Vat-die-Krok and Vat-die-Likkewaan are only the 4 Feb dry run and the 11 Feb final. The poster does not say whether the dry run scores. 4 Feb stays Triple S, which is what the old 4 Feb rule already did, so no dry-run score was added or removed.";
+  var SCORING_SHORT = "Scored in the Triple S league with the existing points. Triple S and Splash & Dash are separate groups. The 4 Feb dry run is not given its own score.";
 
   // Exact poster nights. kind distinguishes a normal series night from the dry run and the final.
   var NIGHTS = [
@@ -49,24 +49,26 @@
     "2027-01-07": "Off-week. The series resumes on 14 January."
   };
 
+  // Normal Thursday series courses. Vat-die-Krok / Vat-die-Likkewaan are not these.
   var LONG = {
     km: 9.3,
     laps: 3,
     seriesName: "Super Serious Series (SSS)",
-    leagueName: "Vat-die-Krok",
     style: "The original Dusi style club league",
     structure: "2 time trial laps + run with boat + 1 time trial lap",
-    label: "SSS · Vat-die-Krok"
+    label: "Triple S"
   };
   var SHORT = {
     km: 5.3,
     laps: 3,
     seriesName: "Splash & Dash Series",
-    leagueName: "Vat-die-Likkewaan",
     style: "The shorter Dusi style league",
     structure: "2 short time trial laps + run without boat + 1 short time trial lap",
-    label: "Splash & Dash · Vat-die-Likkewaan"
+    label: "Splash & Dash"
   };
+  // End-of-series names only. The poster does not give their distance or lap count.
+  var END_LONG = { label: "Vat-die-Krok", km: null, laps: null };
+  var END_SHORT = { label: "Vat-die-Likkewaan", km: null, laps: null };
 
   function pad(n){return String(n).padStart(2,"0");}
   function asDate(v){
@@ -114,9 +116,49 @@
     var key = ymd(date);
     return key >= WINDOW_START && key <= WINDOW_END;
   }
+  function namesForKind(kind){
+    if (kind === "dry-run" || kind === "final") {
+      return {
+        kind: kind,
+        longLabel: END_LONG.label,
+        shortLabel: END_SHORT.label,
+        longKm: null,
+        shortKm: null,
+        distanceTbc: true,
+        prescribeLaps: false
+      };
+    }
+    return {
+      kind: "standard",
+      longLabel: LONG.label,
+      shortLabel: SHORT.label,
+      longTitle: LONG.seriesName,
+      shortTitle: SHORT.seriesName,
+      longStyle: LONG.style,
+      shortStyle: SHORT.style,
+      longStructure: LONG.structure,
+      shortStructure: SHORT.structure,
+      longKm: LONG.km,
+      shortKm: SHORT.km,
+      distanceTbc: false,
+      prescribeLaps: true,
+      laps: LONG.laps
+    };
+  }
+  // Labels follow the date, so a trial saved with the old combined names still displays correctly.
+  function viewFor(trial){
+    if (!trial) return null;
+    var spec = trial.date ? specFor(trial.date) : null;
+    var kind = spec ? spec.kind : (trial.series && trial.series.kind);
+    if (!kind) return null;
+    if (!spec && !(trial.series && trial.series.id === SERIES_ID)) return null;
+    return namesForKind(kind);
+  }
   function specFor(date){
     var night = BY_DATE[ymd(date)];
     if (!night) return null;
+    var names = namesForKind(night.kind);
+    var end = names.distanceTbc;
     return {
       id: SERIES_ID,
       season: SEASON,
@@ -124,8 +166,10 @@
       kind: night.kind,
       k1Year: K1_YEAR,
       pfd: PFD,
-      long: LONG,
-      short: SHORT
+      distanceTbc: end,
+      long: end ? END_LONG : LONG,
+      short: end ? END_SHORT : SHORT,
+      names: names
     };
   }
   function seasonFor(date){
@@ -162,21 +206,34 @@
   }
   function calendarRows(){
     return NIGHTS.map(function (n) {
-      var detail = n.kind === "dry-run" ? "Dry run for Vat-die-Krok and Vat-die-Likkewaan"
-        : n.kind === "final" ? "Final for Vat-die-Krok and Vat-die-Likkewaan"
-        : "SSS / Vat-die-Krok and Splash & Dash / Vat-die-Likkewaan";
-      return {date:n.date, kind:n.kind, title:kindTitle(n.kind), detail:detail};
+      var names = namesForKind(n.kind);
+      var detail = n.kind === "dry-run" ? "Dry run — Vat-die-Krok and Vat-die-Likkewaan. Distance TBC."
+        : n.kind === "final" ? "Final — Vat-die-Krok and Vat-die-Likkewaan. Distance TBC."
+        : "Triple S (9.3 km) and Splash & Dash (5.3 km)";
+      var title = n.kind === "standard" ? "Triple S + Splash & Dash" : kindTitle(n.kind);
+      return {date:n.date, kind:n.kind, title:title, detail:detail, km: names.distanceTbc ? "TBC" : "9.3 / 5.3"};
     });
   }
+  function pickerLabel(date){
+    var spec = specFor(date);
+    if (!spec) return null;
+    if (spec.kind === "standard") return "Triple S + Splash & Dash";
+    var both = "Vat-die-Krok + Vat-die-Likkewaan";
+    if (spec.kind === "dry-run") return both + " · dry run";
+    if (spec.kind === "final") return both + " · final";
+    return both;
+  }
   function trialSeries(spec){
+    var names = spec.names || namesForKind(spec.kind);
     return {
       id: spec.id,
       kind: spec.kind,
       k1Year: spec.k1Year,
-      longKm: spec.long.km,
-      shortKm: spec.short.km,
-      longLabel: spec.long.label,
-      shortLabel: spec.short.label
+      distanceTbc: !!names.distanceTbc,
+      longKm: names.longKm,
+      shortKm: names.shortKm,
+      longLabel: names.longLabel,
+      shortLabel: names.shortLabel
     };
   }
   // Fields for a trial the timekeeper has not created yet. Does not attach entries or results.
@@ -185,24 +242,29 @@
     var spec = specFor(date);
     var base = {season:seasonFor(date), start:startTimeFor(date)};
     if (!spec) return base;
-    return {
-      season: SEASON,
-      start: base.start,
-      lapsLong: LONG.laps,
-      longShortLaps: 0,
-      lapsShort: SHORT.laps,
-      series: trialSeries(spec)
-    };
+    var stamped = { season: SEASON, start: base.start, series: trialSeries(spec) };
+    // Only a normal series night has a poster lap count. The Feb races do not.
+    if (!spec.distanceTbc) {
+      stamped.lapsLong = LONG.laps;
+      stamped.longShortLaps = 0;
+      stamped.lapsShort = SHORT.laps;
+    }
+    return stamped;
   }
-  // Fixed poster distance, or null so the caller keeps ordinary lap × km maths.
+  // Poster distance for a known course, or null when this is not that course
+  // or the poster did not publish a distance (Vat-die-Krok / Vat-die-Likkewaan).
   function seriesCourseKm(trial, course){
-    if (!isSeriesTrial(trial)) return null;
-    var km = course === "short" ? +trial.series.shortKm : +trial.series.longKm;
-    return isFinite(km) ? km : null;
+    var view = viewFor(trial);
+    if (!view || view.distanceTbc) return null;
+    var km = course === "short" ? view.shortKm : view.longKm;
+    return (km == null || !isFinite(+km)) ? null : +km;
   }
   function reminderLine(spec){
-    var head = spec.kind === "dry-run" ? "Dry run — " : spec.kind === "final" ? "Final — " : "";
-    return head + "Super Serious Series / Vat-die-Krok 9.3 km and Splash & Dash / Vat-die-Likkewaan 5.3 km. " + PFD + ".";
+    if (spec.distanceTbc) {
+      var head = spec.kind === "dry-run" ? "Dry run — " : "Final — ";
+      return head + "Vat-die-Krok and Vat-die-Likkewaan. Distance TBC — set the laps on the night. " + PFD + ".";
+    }
+    return "Two races: Triple S (Super Serious Series) 9.3 km and Splash & Dash 5.3 km. " + PFD + ".";
   }
 
   return {
@@ -225,6 +287,9 @@
     startTimeFor: startTimeFor,
     isSeriesTrial: isSeriesTrial,
     kindTitle: kindTitle,
+    namesForKind: namesForKind,
+    viewFor: viewFor,
+    pickerLabel: pickerLabel,
     offWeekThursdays: offWeekThursdays,
     offWeekReason: offWeekReason,
     nights: nights,

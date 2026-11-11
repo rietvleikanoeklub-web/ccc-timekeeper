@@ -74,12 +74,15 @@ const longKm =()=>+S.settings.longLapKm||2.3;
 const shortKm=()=>+S.settings.shortLapKm||1.4;
 function courseKm(t,c){if(!t)return 0;
   if(c!=="short"&&t.special&&+t.special.km)return +t.special.km;
+  const view=TTSeries.viewFor(t);
+  if(view){ if(view.distanceTbc) return null; return c==="short"?view.shortKm:view.longKm; }
   const seriesKm=TTSeries.seriesCourseKm(t,c); if(seriesKm!=null)return seriesKm;
   return c==="short"?((t.lapsShort||0)*shortKm()):((t.lapsLong||0)*longKm()+(t.longShortLaps||0)*shortKm());}
 function courseName(t,c){
-  if(c==="short") return (t&&t.series&&t.series.shortLabel)?t.series.shortLabel:"Short";
+  const view=t&&TTSeries.viewFor(t);
+  if(view) return c==="short"?view.shortLabel:view.longLabel;
+  if(c==="short") return "Short";
   if(t&&t.special&&t.special.name) return t.special.name;
-  if(t&&t.series&&t.series.longLabel) return t.series.longLabel;
   return "Long";}
 function lapTarget(t,c){return TTScore.lapTarget(t,c);}
 const entryTotal=e=>TTScore.entryTotal(e);
@@ -108,7 +111,10 @@ function renderLatest(){
   let h=`<h2>${t.special&&t.special.name?'<span class="star">⭐</span> ':""}${esc(fmtDate(t.date))}</h2>
     <div class="meta">${esc(series?(TTSeries.kindTitle(t.series.kind)+" · "+t.season):t.season+(series?"":" league"))}${t.timekeeper?" · timekeeper "+esc(t.timekeeper):""}${
       t.weather?` · ${Math.round(t.weather.temp)}°C, wind ${Math.round(t.weather.wind)} km/h`:""}</div>`;
-  if(series) h+=`<div class="meta">${esc(TTSeries.LONG.structure)} = ${TTSeries.LONG.km.toFixed(1)} km · ${esc(TTSeries.SHORT.structure)} = ${TTSeries.SHORT.km.toFixed(1)} km. ${esc(TTSeries.PFD)}</div>`;
+  if(series){const view=TTSeries.viewFor(t);
+    h+=view&&view.distanceTbc
+      ? `<div class="meta">${esc(view.longLabel)} and ${esc(view.shortLabel)}. Distance TBC. ${esc(TTSeries.PFD)}</div>`
+      : `<div class="meta">${esc(view.longLabel)}: ${esc(view.longStructure)} = ${view.longKm.toFixed(1)} km · ${esc(view.shortLabel)}: ${esc(view.shortStructure)} = ${view.shortKm.toFixed(1)} km. ${esc(TTSeries.PFD)}</div>`;}
   if(t.damLevel&&t.damLevel.pct_full!=null){const dl=t.damLevel;
     h+=`<div class="meta">🌊 ${esc(dl.name||"Rietvlei")} ${(+dl.pct_full).toFixed(1)}% full`
       +(dl.volume_mcm!=null&&dl.fsc_mcm!=null?` · ${(+dl.volume_mcm).toFixed(2)}/${(+dl.fsc_mcm).toFixed(2)} Mm³`:"")
@@ -118,7 +124,8 @@ function renderLatest(){
     const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))
       .map(e=>({e,total:entryTotal(e)})).filter(g=>g.total!=null).sort(cmpET);
     if(!grp.length)return;
-    h+=`<div class="grp">${esc(courseName(t,course))}${orderOnly?"":" — "+courseKm(t,course).toFixed(1)+" km"}</div>`
+    const km=courseKm(t,course);
+    h+=`<div class="grp">${esc(courseName(t,course))}${orderOnly?"":(km!=null?" — "+Number(km).toFixed(1)+" km":" — distance TBC")}</div>`
       +`<table><thead><tr><th class="pos">#</th><th>Crew</th>${orderOnly?"":'<th class="n">Time</th><th class="n">km/h</th>'}</tr></thead><tbody>`;
     grp.forEach((g,i)=>{const sp=orderOnly?null:entrySpeed(g.e);
       h+=`<tr class="p${i+1}"><td class="pos">${i+1}</td>
