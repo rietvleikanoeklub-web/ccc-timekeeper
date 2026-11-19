@@ -31,7 +31,8 @@
    0.47.0 Race-day screens. Prep is duty, check-in and laps. Race is the clock and
           boat laps only. Info holds rules, the dam reading (with the report date),
           routes and series dates. Standings, the full roster and cloud sync stay
-          under Info. Boat laps and the saved document are unchanged.
+          under Info. The header keeps 👨‍🏫 Landman — father of the CCC time trials,
+          with the version at the top right. Boat laps and the saved document are unchanged.
    0.46.2 Normal series nights are Triple S (9.3 km) and Splash & Dash (5.3 km).
           Vat-die-Krok and Vat-die-Likkewaan are only the 4 Feb dry run and the 11 Feb final,
           with distance left as TBC and laps set by the timekeeper. Scoring is unchanged.
@@ -200,9 +201,11 @@
     padding:calc(env(safe-area-inset-top,0px) + 6px) 12px 7px;
     padding-left:max(12px, env(safe-area-inset-left,0px));
     padding-right:max(12px, env(safe-area-inset-right,0px));
-    display:flex;align-items:center;gap:8px;border-bottom:3px solid var(--cyan)}
-  header .logo{font-weight:800;font-size:1.15rem;letter-spacing:.02em;line-height:1.1}
-  header .ver{margin-left:auto;font-size:12px;font-weight:650;opacity:.72;letter-spacing:.02em}
+    display:flex;align-items:flex-start;gap:8px;border-bottom:3px solid var(--cyan)}
+  header .brand{flex:1;min-width:0}
+  header .logo{display:block;font-weight:800;font-size:1.15rem;letter-spacing:.02em;line-height:1.1}
+  header .tribute{display:block;margin-top:1px;font-size:11px;line-height:1.2;opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header .ver{margin-left:auto;flex:0 0 auto;padding-top:2px;font-size:12px;font-weight:650;opacity:.72;letter-spacing:.02em}
   main{padding:12px;padding-left:max(12px, env(safe-area-inset-left,0px));
     padding-right:max(12px, env(safe-area-inset-right,0px));max-width:760px;margin:0 auto}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
@@ -336,7 +339,10 @@
 </head>
 <body>
 <header>
-  <span class="logo">🛶 CCC Timekeeper</span>
+  <div class="brand">
+    <span class="logo">🛶 CCC Timekeeper</span>
+    <span class="tribute">👨‍🏫 Landman — father of the CCC time trials</span>
+  </div>
   <span class="ver" id="verTag"></span>
 </header>
 
@@ -516,7 +522,6 @@
       <h2>Routes and series dates</h2>
       <div id="infoDates"></div>
     </div>
-    <p class="small muted">Landman — father of the CCC time trials</p>
   </section>
 
   <!-- ===================== STANDINGS ===================== -->
