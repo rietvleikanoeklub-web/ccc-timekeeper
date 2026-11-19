@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0e7c5a">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#003d6b">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -28,6 +28,10 @@
    - Members: editable; import from CCC Bar Tab JSON (paste/upload).
 
   CHANGELOG
+   0.47.0 Race-day screens. Prep is duty, check-in and laps. Race is the clock and
+          boat laps only. Info holds rules, the dam reading (with the report date),
+          routes and series dates. Standings, the full roster and cloud sync stay
+          under Info. Boat laps and the saved document are unchanged.
    0.46.2 Normal series nights are Triple S (9.3 km) and Splash & Dash (5.3 km).
           Vat-die-Krok and Vat-die-Likkewaan are only the 4 Feb dry run and the 11 Feb final,
           with distance left as TBC and laps set by the timekeeper. Scoring is unchanged.
@@ -179,45 +183,52 @@
 -->
 <style>
   :root{
-    --green:#0e7c5a; --green-d:#0a5d43; --bg:#f3f4f6; --card:#fff; --ink:#111827;
-    --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --warn:#b45309; --danger:#b91c1c;
-    --gold:#b8860b; --radius:14px; --pad:16px;
+    --green:#0a6e3c; --green-d:#085530; --navy:#003d6b; --cyan:#00c6e6;
+    --bg:#f3f0e8; --card:#fff; --ink:#122033;
+    --muted:#3a4d60; --line:#d3dde6; --accent:#005f9e; --warn:#8a4b00; --danger:#b42318;
+    --gold:#7a4e00; --radius:16px; --pad:14px;
   }
   *{box-sizing:border-box}
+  html{font-size:18px}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     -webkit-text-size-adjust:100%}
-  body{padding-bottom:84px}
-  header{position:sticky;top:0;z-index:20;background:var(--green);color:#fff;
-    padding:calc(env(safe-area-inset-top,0px) + 10px) var(--pad) 8px;
-    display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
-  header .logo{font-weight:800;font-size:18px;letter-spacing:.3px}
-  header .ver{margin-left:auto;font-size:11px;opacity:.8}
-  main{padding:var(--pad);max-width:760px;margin:0 auto}
+  body{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px));line-height:1.35}
+  body.kb{padding-bottom:12px}
+  body.kb nav{display:none}
+  header{position:sticky;top:0;z-index:20;background:var(--navy);color:#fff;
+    padding:calc(env(safe-area-inset-top,0px) + 6px) 12px 7px;
+    padding-left:max(12px, env(safe-area-inset-left,0px));
+    padding-right:max(12px, env(safe-area-inset-right,0px));
+    display:flex;align-items:center;gap:8px;border-bottom:3px solid var(--cyan)}
+  header .logo{font-weight:800;font-size:1.15rem;letter-spacing:.02em;line-height:1.1}
+  header .ver{margin-left:auto;font-size:12px;font-weight:650;opacity:.72;letter-spacing:.02em}
+  main{padding:12px;padding-left:max(12px, env(safe-area-inset-left,0px));
+    padding-right:max(12px, env(safe-area-inset-right,0px));max-width:760px;margin:0 auto}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-    padding:var(--pad);margin:0 0 14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-  .card h2{margin:0 0 10px;font-size:15px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-  h1{font-size:20px;margin:0 0 4px}
+    padding:12px;margin:0 0 12px;box-shadow:0 1px 2px rgba(10,22,40,.04)}
+  .card h2{margin:0 0 8px;font-size:.95rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  h1{font-size:1.45rem;margin:0 0 2px;line-height:1.1}
   .row{display:flex;gap:10px;align-items:center}
   .row.wrap{flex-wrap:wrap}
   .grow{flex:1}
-  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+  label{display:block;font-size:.85rem;color:var(--muted);margin:8px 0 4px}
   input,select,button,textarea{font:inherit}
-  input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--line);
-    border-radius:10px;background:#fff;color:var(--ink)}
+  input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);
+    border-radius:12px;background:#fff;color:var(--ink);min-height:48px}
   textarea{min-height:90px;resize:vertical}
-  button{cursor:pointer;border:0;border-radius:10px;padding:11px 14px;font-weight:600;
-    background:var(--green);color:#fff}
+  button{cursor:pointer;border:0;border-radius:12px;padding:12px 14px;font-weight:700;
+    background:var(--green);color:#fff;min-height:48px}
   button.sec{background:#fff;color:var(--green);border:1px solid var(--green)}
   button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
   button.danger{background:var(--danger)}
-  button.sm{padding:7px 10px;font-size:13px}
+  button.sm{padding:8px 12px;font-size:.95rem;min-height:44px}
   button.wa{background:#25d366;color:#073}
   .pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600}
   .pill.summer{background:#fde68a;color:#92400e}
   .pill.winter{background:#bfdbfe;color:#1e40af}
   .pill.triples{background:#ddd6fe;color:#5b21b6}
-  .big{font-size:30px;font-weight:800;line-height:1.1}
+  .big{font-size:2rem;font-weight:800;line-height:1}
   .kv{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
   .kv:last-child{border-bottom:0}
   .kv .k{color:var(--muted)}
@@ -227,15 +238,18 @@
   th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .muted{color:var(--muted)}
-  .small{font-size:12px}
-  .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
-  .tabs button{background:#fff;color:var(--muted);border:1px solid var(--line);padding:8px 12px}
+  .small{font-size:.85rem}
+  .tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+  .tabs button{background:#fff;color:var(--muted);border:1px solid var(--line);padding:8px 10px;min-height:44px;flex:1}
   .tabs button.on{background:var(--green);color:#fff;border-color:var(--green)}
+  #capFilter button{font-size:.9rem;padding:8px 6px;white-space:nowrap}
   nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);
-    display:flex;justify-content:space-around;padding:6px 4px calc(env(safe-area-inset-bottom,0px) + 6px);z-index:20}
-  nav button{background:none;color:var(--muted);font-size:11px;font-weight:600;display:flex;
-    flex-direction:column;align-items:center;gap:3px;padding:6px 8px;flex:1}
-  nav button .ic{font-size:20px;line-height:1}
+    display:flex;justify-content:space-around;
+    padding:4px max(4px, env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 4px) max(4px, env(safe-area-inset-left,0px));
+    z-index:20}
+  nav button{background:none;color:var(--muted);font-size:.95rem;font-weight:800;display:flex;
+    flex-direction:column;align-items:center;gap:1px;padding:6px 8px;flex:1;min-height:48px}
+  nav button .ic{font-size:1.15rem;line-height:1}
   nav button.on{color:var(--green)}
   .view{display:none}
   .view.on{display:block}
@@ -247,16 +261,20 @@
   .tag{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:800;letter-spacing:.3px;vertical-align:middle}
   .tag.long{background:#bfdbfe;color:#1e3a8a}
   .tag.short{background:#fed7aa;color:#9a3412}
-  .boatrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);
-    border-radius:10px;margin-bottom:5px;background:#fff;-webkit-tap-highlight-color:transparent}
+  .boatrow{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:14px;margin-bottom:8px;background:#fff;min-height:72px;-webkit-tap-highlight-color:transparent}
   .boatrow.active{cursor:pointer}
-  .boatrow.active:active{background:#ecfdf5;transform:scale(.99)}
+  .boatrow.active:active{background:#e5f6ee;transform:scale(.99)}
   .boatrow .bl{flex:1;min-width:0}
-  .boatrow .bl b{font-size:14px;line-height:1.15}
-  .boatrow .bl .small{margin-top:1px}
-  .boatrow.done{opacity:.6;background:#f9fafb}
-  .lapbtn{background:var(--green);color:#fff;font-weight:800;border-radius:9px;padding:9px 12px;font-size:13px;flex:0 0 auto;pointer-events:none}
-  .undo{background:#fff;color:var(--muted);border:1px solid var(--line);padding:6px 8px;font-size:13px;flex:0 0 auto}
+  .boatrow .bl b{font-size:1.2rem;line-height:1.15}
+  .boatrow .bl .small{margin-top:2px}
+  .boatrow.done{opacity:.72;background:#f7f5ef;min-height:56px}
+  .boatrow.done .bl b{font-size:1.05rem}
+  .lapbtn{background:var(--green);color:#fff;font-weight:800;border-radius:12px;padding:10px 12px;
+    font-size:1rem;flex:0 0 auto;pointer-events:none;min-width:76px;min-height:48px;
+    display:flex;align-items:center;justify-content:center}
+  .undo{background:#fff;color:var(--ink);border:1px solid var(--line);padding:0;font-size:1.15rem;
+    flex:0 0 auto;width:48px;height:48px;min-height:48px}
   .chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}
   .chip{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;border-radius:999px;padding:9px 13px;font-size:13px;font-weight:700}
   .chip:active{background:#d1fae5;transform:scale(.98)}
@@ -273,7 +291,7 @@
   .modal{background:#fff;border-radius:16px;padding:18px;max-width:420px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
   .modal h3{margin:0 0 10px}
   .alias{color:var(--muted);font-weight:500}
-  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#111827;color:#fff;
+  .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#122033;color:#fff;
     padding:10px 16px;border-radius:10px;font-size:14px;z-index:40;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%}
   .toast.show{opacity:1}
   .empty{color:var(--muted);text-align:center;padding:24px 8px}
@@ -282,65 +300,136 @@
   .duty{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
   .duty .d{font-weight:700;width:74px;flex:0 0 auto}
   .duty.next{background:#ecfdf5;border-radius:8px;padding-left:8px;padding-right:8px}
-  details summary{cursor:pointer;font-weight:600;color:var(--green);font-size:13px;margin-top:6px}
+  details summary{cursor:pointer;font-weight:700;color:var(--green);font-size:1rem;margin-top:4px}
   .stepper{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
-  .stepper button{min-width:42px;padding:8px 0;font-size:20px;line-height:1}
-  .stepper input{width:54px;text-align:center;padding:7px 4px;font-weight:800}
+  .stepper button{min-width:44px;min-height:44px;padding:0;font-size:1.35rem;line-height:1}
+  .stepper input{width:52px;text-align:center;padding:6px 4px;font-weight:800;min-height:44px}
+  .backrow{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .backrow h1{margin:0}
+  .backrow button{min-height:44px}
+  .prephead{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .prepstart{text-align:right}
+  .readygrid{display:flex;justify-content:space-between;gap:12px}
+  .readygrid b{font-size:1.15rem}
+  .racebar{display:flex;gap:8px;align-items:center}
+  .racebar select{flex:1;min-height:44px;padding:8px 10px}
+  .racebar .plus{width:48px;min-width:48px;height:48px;padding:0;font-size:1.5rem;line-height:1}
+  .racehead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0 4px}
+  .racehead .raceclock{font-size:2.75rem;letter-spacing:-.03em}
+  .racehead #btnRace{min-width:118px;max-width:46%}
+  .racemeta{font-size:.9rem;color:var(--muted);margin:0 0 6px;line-height:1.25}
+  .stillout{font-weight:800;font-size:1rem;margin:4px 0 6px}
+  .checkrow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .checkrow:last-child{border-bottom:0}
+  .segtog{display:flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;flex:0 0 auto}
+  .segtog button{background:#fff;color:var(--ink);border:0;border-radius:0;min-height:44px;padding:8px 12px;font-size:.95rem}
+  .segtog button.on{background:var(--green);color:#fff}
+  .segtog button + button{border-left:1px solid var(--line)}
+  .laprow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0}
+  .laprow .muted{font-size:.85rem}
+  .damfig{font-size:2.6rem;font-weight:800;line-height:1;letter-spacing:-.03em}
+  .raceTools{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .raceTools button{flex:1;font-size:.85rem;white-space:nowrap;padding:8px 6px}
+  .sr{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+  #view-capture h1{display:none}
 </style>
 </head>
 <body>
 <header>
-  <div style="display:flex;align-items:center;gap:10px;width:100%">
-    <span class="logo">🛶 CCC Timekeeper</span>
-    <span class="ver" id="verTag"></span>
-  </div>
-  <div style="width:100%;font-size:11px;opacity:.78;margin-top:1px">👨‍🏫 Landman — father of the CCC time trials</div>
+  <span class="logo">🛶 CCC Timekeeper</span>
+  <span class="ver" id="verTag"></span>
 </header>
 
 <main>
-  <!-- ===================== TONIGHT ===================== -->
+  <!-- ===================== PREP ===================== -->
   <section class="view on" id="view-tonight">
-    <h1 id="tnTitle">This Thursday</h1>
-    <p class="muted small" id="tnSub"></p>
-
-    <div class="card">
-      <div class="row wrap" style="justify-content:space-between">
-        <div>
-          <div class="muted small">Start time</div>
-          <div class="big" id="tnStart">—</div>
-        </div>
-        <div style="text-align:right">
-          <div class="muted small" id="tnDistLabel">Long / short (km)</div>
-          <div class="big" id="tnDist">—</div>
-        </div>
+    <div class="prephead">
+      <div>
+        <h1 id="tnTitle">This Thursday</h1>
+        <p class="muted small" id="tnSub" style="margin:2px 0 0"></p>
       </div>
-      <div class="kv"><span class="k">Season</span><span class="v" id="tnSeason"></span></div>
-      <div class="kv"><span class="k">Sunset (Pretoria approx)</span><span class="v" id="tnSunset"></span></div>
-      <div class="kv"><span class="k">Conditions now</span><span class="v" id="tnWeather">—</span></div>
-      <div class="kv"><span class="k">Dam level</span><span class="v" id="tnDam">—</span></div>
-      <div class="kv"><span class="k">Timekeeper on duty</span><span class="v" id="tnTk"></span></div>
+      <div class="prepstart">
+        <div class="muted small">Start</div>
+        <div class="big" id="tnStart">—</div>
+      </div>
+    </div>
+
+    <div class="card" id="readyCard">
+      <div id="readySum"></div>
+      <div class="row wrap" style="margin-top:8px">
+        <button class="sm wa" id="tnRemind" type="button">Remind</button>
+        <button class="sm ghost" id="tnSwap" type="button">Swap</button>
+        <button class="grow" id="btnStartTrial" type="button">Open the race</button>
+      </div>
       <div id="tnNote"></div>
     </div>
 
-    <div class="card">
-      <h2>Set tonight's course</h2>
-      <p class="small muted" id="tnLapHelp" style="margin-top:0">Laps for tonight. Long and short are separate — 4 and 4 is fine. The sunset line is only a suggestion for the long course.</p>
-      <div id="tnLaps"></div>
-      <button type="button" class="sm sec" id="tnUseSug" style="margin-top:8px">Use sunset suggestion (long course)</button>
-      <label>Notes for paddlers (optional)</label>
-      <input id="tnNotes" placeholder="e.g. buoy #3 missing — no time bonus tonight">
-      <div class="row wrap" style="margin-top:12px">
-        <button class="wa grow" id="btnAnnounce">📣 Announce to volunteers (WhatsApp)</button>
-        <button class="sec" id="btnStartTrial">Start capturing →</button>
+    <div class="card" id="addCard">
+      <h2>Check in</h2>
+      <div id="capSuggest"></div>
+      <div class="row wrap" id="setAllRow" style="margin:4px 0 6px">
+        <span class="small muted">Set every boat</span>
+        <button type="button" class="sm sec" id="setAllLong">Long</button>
+        <button type="button" class="sm sec" id="setAllShort">Short</button>
       </div>
-      <button class="sec" id="btnSocial" style="width:100%;margin-top:8px">🌐 Post to CCC social group (start · distance · sunset · conditions · dam)</button>
-      <div class="hintbox">Volunteers message = who's keeping time. Social message = start time, distance, sunset, forecast and dam level for the whole club.</div>
+      <div id="checkList"></div>
+      <div id="capQuick"></div>
+      <div id="capNewCombo">
+        <label>Add a boat</label>
+        <input id="capPadSearch" placeholder="Search paddler" autocomplete="off">
+        <div class="row wrap" style="margin-top:8px">
+          <div style="width:108px"><label>Class</label><select id="capBoat"></select></div>
+          <div class="grow"><label>Course</label>
+            <div id="addCourseTog" class="segtog" style="width:100%"></div>
+            <select id="capCourse" class="sr" tabindex="-1" aria-hidden="true"></select>
+          </div>
+        </div>
+        <div id="capPaddlers"></div>
+        <button id="capAdd" type="button" style="margin-top:12px;width:100%">Add boat</button>
+      </div>
     </div>
+
+    <div class="card" id="courseCard">
+      <h2>Laps</h2>
+      <p class="small muted" id="tnLapHelp" style="margin-top:0">Long and short are separate. Rules and the dam are on Info.</p>
+      <div id="tnLaps"></div>
+      <button type="button" class="sm sec" id="tnUseSug" style="margin-top:8px">Use sunset suggestion</button>
+      <div id="capLapCfg" style="display:none">
+        <div class="laprow"><div class="grow"><b>Long laps</b></div>
+          <span class="stepper"><button type="button" class="sec" id="lapsLongDec">−</button><input id="lapsLong" type="number" min="1" max="8" inputmode="numeric"><button type="button" class="sec" id="lapsLongInc">+</button></span></div>
+        <div class="laprow"><div class="grow"><b>Extra short laps</b></div>
+          <span class="stepper"><button type="button" class="sec" id="lsDec">−</button><input id="longShortLaps" type="number" min="0" max="3" inputmode="numeric"><button type="button" class="sec" id="lsInc">+</button></span></div>
+        <div class="laprow"><div class="grow"><b>Short-course laps</b></div>
+          <span class="stepper"><button type="button" class="sec" id="lapsShortDec">−</button><input id="lapsShort" type="number" min="1" max="10" inputmode="numeric"><button type="button" class="sec" id="lapsShortInc">+</button></span></div>
+      </div>
+      <details style="margin-top:8px">
+        <summary>Special time trial</summary>
+        <div class="row wrap small" id="capSpecCfg" style="gap:8px;align-items:center;margin-top:8px">
+          <label style="margin:0;display:flex;align-items:center;gap:6px"><input type="checkbox" id="capSpecial" style="width:auto;min-height:0"> Special time trial</label>
+          <span id="capSpecialFields" style="display:none">
+            <input id="capSpecName" placeholder="e.g. K3 5 km" style="margin-top:8px">
+            <div class="row" style="margin-top:8px">
+              <input id="capSpecKm" type="number" step="0.1" placeholder="km">
+              <input id="capSpecLaps" type="number" min="1" placeholder="laps">
+            </div>
+          </span>
+        </div>
+      </details>
+    </div>
+
+    <details class="card">
+      <summary>Messages</summary>
+      <label>Notes for paddlers (optional)</label>
+      <input id="tnNotes" placeholder="e.g. buoy missing — no time bonus tonight">
+      <button class="wa" id="btnAnnounce" type="button" style="width:100%;margin-top:10px">Announce to volunteers</button>
+      <button class="sec" id="btnSocial" type="button" style="width:100%;margin-top:8px">Post to the social group</button>
+      <div class="hintbox">Volunteers message = who is keeping time. Social message = start, distance, sunset, forecast and dam level.</div>
+    </details>
   </section>
 
   <!-- ===================== ROSTER ===================== -->
   <section class="view" id="view-roster">
-    <h1>Timekeeper roster</h1>
+    <div class="backrow"><button type="button" class="ghost sm" data-back="info">Info</button><h1>Roster</h1></div>
     <p class="muted small">Tap a duty to remind that person, request a swap, or reassign. A timekeeper who paddles makes the trial unofficial — so swaps matter.</p>
     <div class="card" id="rosterList"></div>
     <div class="card adminonly">
@@ -370,77 +459,69 @@
     </div>
   </section>
 
-  <!-- ===================== CAPTURE ===================== -->
+  <!-- ===================== RACE ===================== -->
   <section class="view" id="view-capture">
-    <h1 id="capH1">Capture results</h1>
-    <div class="card" id="capTrialCard">
-      <div class="row">
-        <select id="capTrial" class="grow"></select>
-        <button class="sm sec" id="capNew">＋ New race</button>
-      </div>
-      <div class="muted small" id="capTrialInfo" style="margin-top:6px"></div>
+    <div class="racebar" id="capTrialCard">
+      <select id="capTrial"></select>
+      <button class="sec plus" id="capNew" type="button" aria-label="New race">+</button>
     </div>
-
-    <div id="capSuggest"></div>
-
-    <div class="card" id="raceCard">
-      <div class="row" style="justify-content:space-between;align-items:flex-end">
-        <div>
-          <div class="muted small">Race clock</div>
-          <div class="big raceclock" id="raceClock">0:00.0</div>
-        </div>
-        <button id="btnRace" style="max-width:170px">▶ Start race</button>
-      </div>
-      <div class="tabs" id="capFilter" style="margin-top:14px"></div>
-      <div class="row wrap small" id="capLapCfg" style="gap:12px 16px;align-items:center">
-        <span>Long <span class="stepper"><button type="button" class="sec" id="lapsLongDec">−</button><input id="lapsLong" type="number" min="1" max="8" inputmode="numeric"><button type="button" class="sec" id="lapsLongInc">+</button></span> long</span>
-        <span>+ <span class="stepper"><button type="button" class="sec" id="lsDec">−</button><input id="longShortLaps" type="number" min="0" max="3" inputmode="numeric"><button type="button" class="sec" id="lsInc">+</button></span> short</span>
-        <span>Short course <span class="stepper"><button type="button" class="sec" id="lapsShortDec">−</button><input id="lapsShort" type="number" min="1" max="10" inputmode="numeric"><button type="button" class="sec" id="lapsShortInc">+</button></span> laps</span>
-      </div>
-      <div class="row wrap small" id="capSpecCfg" style="gap:8px;align-items:center;margin-top:8px">
-        <label style="margin:0;display:flex;align-items:center;gap:6px"><input type="checkbox" id="capSpecial" style="width:auto"> ⭐ Special time trial</label>
-        <span id="capSpecialFields" style="display:none">
-          <input id="capSpecName" placeholder="e.g. K3 5 km" style="width:120px;display:inline-block;padding:5px 6px">
-          <input id="capSpecKm" type="number" step="0.1" placeholder="km" style="width:64px;display:inline-block;padding:5px 6px">
-          <input id="capSpecLaps" type="number" min="1" placeholder="laps" style="width:64px;display:inline-block;padding:5px 6px">
-        </span>
-      </div>
-      <div class="small" id="lapSuggest" style="margin-top:6px"></div>
-      <div class="small muted" id="capWeather" style="margin-top:4px"></div>
-      <div class="row wrap small muted" id="capDamRow" style="gap:6px;align-items:center;margin-top:4px">
-        <span id="capDam"></span>
-        <button class="sm sec" id="capDamEdit" style="padding:3px 8px">Dam level…</button>
-      </div>
+    <div class="racehead" id="raceCard">
+      <div class="big raceclock" id="raceClock">0:00.0</div>
+      <button id="btnRace" type="button">Start</button>
     </div>
-
-    <div class="card" id="boatsCard">
-      <h2>Boats <span class="muted small" id="capCount"></span></h2>
-      <div class="muted small" id="capHelp" style="margin-bottom:10px">Tap a boat as it crosses the line to record a lap. Finished boats drop to the bottom.</div>
+    <div class="racemeta" id="capTrialInfo"></div>
+    <div class="tabs" id="capFilter"></div>
+    <div id="capCount" class="stillout"></div>
+    <div id="boatsCard">
       <div id="capList"></div>
-      <button class="wa" id="capShare" style="width:100%;margin-top:12px">📋 Share results to WhatsApp</button>
-      <button class="ghost" id="capClearTest" style="width:100%;margin-top:8px">🧪 Clear test laps &amp; reset clock (keep boats)</button>
-      <button class="ghost danger adminonly" id="capClear" style="width:100%;margin-top:8px">🗑 Clear all boats (reset this race)</button>
     </div>
+    <div class="raceTools">
+      <button class="sm wa" id="capShare" type="button">Share</button>
+      <button class="sm ghost" id="capClearTest" type="button">Clear laps</button>
+      <button class="sm ghost danger adminonly" id="capClear" type="button">Clear boats</button>
+    </div>
+  </section>
 
-    <div class="card" id="addCard">
-      <h2>Add a boat</h2>
-      <div id="capQuick"></div>
-      <div id="capNewCombo">
-        <label class="muted">Or build a new combination</label>
-        <div class="row wrap">
-          <div style="width:120px"><label>Boat</label><select id="capBoat"></select></div>
-          <div class="grow"><label>Course</label><select id="capCourse"><option value="long">Long</option><option value="short">Short</option></select></div>
-        </div>
-        <input id="capPadSearch" placeholder="🔍 search paddler…" style="margin-top:8px">
-        <div id="capPaddlers"></div>
-        <button id="capAdd" style="margin-top:12px;width:100%">Add boat to race</button>
-      </div>
+  <!-- ===================== INFO ===================== -->
+  <section class="view" id="view-info">
+    <h1>Info</h1>
+    <p class="muted small" style="margin:0 0 10px">Rules, dam, routes and the series. Results and the club lists are one tap away.</p>
+    <div class="tabs" id="infoJumps">
+      <button type="button" data-go="standings">Results</button>
+      <button type="button" data-go="roster">Roster</button>
+      <button type="button" data-go="members">Club</button>
     </div>
+    <div class="card" id="damCard">
+      <h2>Rietvlei dam</h2>
+      <div class="damfig" id="damPct">—</div>
+      <div id="damMeta" style="margin-top:6px"></div>
+      <div id="damStale"></div>
+      <div class="small muted" id="capDam" style="margin-top:6px"></div>
+      <button class="sm sec" id="capDamEdit" type="button" style="margin-top:8px">Enter a reading</button>
+    </div>
+    <div class="card">
+      <h2>Conditions</h2>
+      <div class="kv"><span class="k">Now</span><span class="v" id="tnWeather">—</span></div>
+      <div class="kv"><span class="k">At the gun</span><span class="v" id="capWeather">—</span></div>
+      <div class="kv"><span class="k">Sunset</span><span class="v" id="tnSunset"></span></div>
+      <div class="kv"><span class="k" id="tnDistLabel">Distance</span><span class="v" id="tnDist"></span></div>
+      <div class="kv"><span class="k">Season</span><span class="v" id="tnSeason"></span></div>
+    </div>
+    <div class="card">
+      <h2>This week</h2>
+      <div id="lapSuggest"></div>
+      <div id="infoRules"></div>
+    </div>
+    <div class="card">
+      <h2>Routes and series dates</h2>
+      <div id="infoDates"></div>
+    </div>
+    <p class="small muted">Landman — father of the CCC time trials</p>
   </section>
 
   <!-- ===================== STANDINGS ===================== -->
   <section class="view" id="view-standings">
-    <h1>Standings</h1>
+    <div class="backrow"><button type="button" class="ghost sm" data-back="info">Info</button><h1>Results</h1></div>
     <div class="tabs" id="standTabs"></div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:6px">
@@ -468,7 +549,7 @@
 
   <!-- ===================== MEMBERS ===================== -->
   <section class="view" id="view-members">
-    <h1>Members</h1>
+    <div class="backrow"><button type="button" class="ghost sm" data-back="info">Info</button><h1>Club</h1></div>
     <div class="card" id="accessCard"></div>
     <div class="card adminonly" id="waCard"></div>
     <div class="card adminonly" id="distCard"></div>
@@ -508,11 +589,9 @@
 </main>
 
 <nav>
-  <button data-v="tonight" class="on"><span class="ic">📅</span>Tonight</button>
-  <button data-v="roster"><span class="ic">🧑‍⚖️</span>Roster</button>
-  <button data-v="capture"><span class="ic">⏱️</span>Capture</button>
-  <button data-v="standings"><span class="ic">🏆</span>Standings</button>
-  <button data-v="members"><span class="ic">👥</span>Members</button>
+  <button data-v="tonight" class="on" type="button"><span class="ic">1</span>Prep</button>
+  <button data-v="capture" type="button"><span class="ic">2</span>Race</button>
+  <button data-v="info" type="button"><span class="ic">3</span>Info</button>
 </nav>
 
 <div class="lockwrap" id="lock" style="display:none">
@@ -536,7 +615,7 @@
 <script src="tt-score.js"></script>
 <script>
 "use strict";
-const APP_VERSION = "0.46.2";
+const APP_VERSION = "0.47.0";
 const STORE_KEY = "ccc_tk_v1";
 const WA_GROUP = "CCC Volunteer Timekeepers";
 
@@ -619,7 +698,9 @@ const COURSES = {
 /* ---------------- cloud config ---------------- */
 // Hardcoded default so every device auto-connects (no manual setup). Overridable in Settings.
 const DEFAULT_CLOUD_URL = "https://script.google.com/macros/s/AKfycbxxcou1HOOavDik0Bmp7etOGdXRW4QZfMoHZMyuDJt-pTFX55le4sG8Wt4gMB9s1qI6wg/exec";
-let CLOUD_URL   = localStorage.getItem("ccc_tk_cloud_url")   || DEFAULT_CLOUD_URL;
+// ?local=1 is for screenshots and offline rehearsal. It does not clear a saved URL and it never writes to the cloud.
+const LOCAL_ONLY = /(?:\?|&)local=1(?:&|$)/.test(location.search);
+let CLOUD_URL   = LOCAL_ONLY ? "" : (localStorage.getItem("ccc_tk_cloud_url")   || DEFAULT_CLOUD_URL);
 let CLOUD_TOKEN = localStorage.getItem("ccc_tk_cloud_token") || ""; // optional, must match SHARED_TOKEN
 
 /* ---------------- state ---------------- */
@@ -922,10 +1003,10 @@ function renderTonight(){
   }
   const help=$("#tnLapHelp");
   if(help) help.textContent=spec&&spec.distanceTbc
-    ? "Vat-die-Krok and Vat-die-Likkewaan. The poster does not give the distance or the lap count. Set the laps for tonight. Distance TBC."
+    ? "Distance is TBC. Set the laps for tonight."
     : spec
-    ? "Two races: Triple S and Splash & Dash. Time 3 laps on each: 2 time-trial laps, the run, then 1 time-trial lap. The run is part of the poster distance, not an extra short lap."
-    : "Laps for tonight. Long and short are separate — 4 and 4 is fine. The sunset line is only a suggestion for the long course.";
+    ? "Poster laps are filled in. Change a number only if tonight is different."
+    : "Long and short are separate. Sunset suggestion is for the long course only.";
   const sugBtn=$("#tnUseSug"); if(sugBtn) sugBtn.style.display=(spec&&!spec.distanceTbc)?"none":"";
   const distLabel=$("#tnDistLabel"); if(distLabel) distLabel.textContent=spec&&spec.distanceTbc?"Distance":spec?"Triple S / Splash & Dash (km)":"Long / short (km)";
 
@@ -938,25 +1019,22 @@ function renderTonight(){
     if(spec) return spec.long.km.toFixed(1)+" / "+spec.short.km.toFixed(1);
     return lk.toFixed(1)+" / "+sk.toFixed(1);})();
   $("#tnSeason").innerHTML=seasonPill(season)+(spec&&spec.kind!=="standard"?` <span class="pill triples">${TTSeries.kindTitle(spec.kind)}</span>`:"");
-  $("#tnSunset").textContent=sunset+"  ·  off water before dark";
-  $("#tnTk").textContent=duty?duty.who:"⚠️ nobody assigned";
+  $("#tnSunset").textContent=sunset+" · off the water before dark";
+  const tkEl=$("#tnTk"); if(tkEl) tkEl.textContent=duty?duty.who:"Nobody assigned";
   currentWeather().then(w=>{const el=$("#tnWeather");if(el)el.textContent=weatherLine(w);}).catch(()=>{});
-  {const el=$("#tnDam");if(el){const show=dl=>{const age=damAgeDays(dl),stale=age!=null&&age>14;
-     el.textContent=dl?damLine(dl,{full:true}).replace(/^🌊 /,""):"no reading yet — enter on Capture";
-     el.style.opacity=stale?"0.55":"1";};
-   if(_damLatest)show(_damLatest); else fetchDam().then(show).catch(()=>show(null));}}
+  renderDamCard();
 
   let note="";
   const tTon=S.trials.find(x=>x.date===key);
   if(tTon&&tTon.special&&tTon.special.name)
-    note+=`<div class="hintbox">⭐ <b>Special time trial tonight: ${tTon.special.name}</b>${+tTon.special.km?` — ${(+tTon.special.km).toFixed(1)} km`:""}${tTon.special.laps?` over ${tTon.special.laps} lap(s)`:""}.</div>`;
-  else if(spec) note+=seriesTonightHtml(spec);
-  else {const sg=suggestCourse(d);const sugKm=(sg.long*longKmVal()+sg.longShort*longShortKmVal());
-    note+=`<div class="warnbox">Sunset ~${sunset}. Suggested long course: <b>${courseLabel(sg.long,sg.longShort)}</b> (~${sugKm.toFixed(1)} km) — back-markers should be finishing their last lap as the sun sets.</div>`;
-    if(TTSeries.inSeasonWindow(key)) note+=`<div class="hintbox">Ordinary Thursday time trial. ${TTSeries.offWeekReason(key)}</div>`;}
-  if(d.getMonth()===7) note+=`<div class="hintbox">🚻 <b>August is Mixed K2 month!</b> Pair up — one man + one woman in a K2 scores in the Mixed League (own trophy, own bragging rights).</div>`;
-  if(!duty) note+=`<div class="warnbox">No timekeeper assigned for tonight — assign one on the Roster tab. If nobody keeps time, the trial is <b>unofficial</b> and no points count.</div>`;
+    note+=`<div class="hintbox">Special time trial: <b>${tTon.special.name}</b>${+tTon.special.km?` — ${(+tTon.special.km).toFixed(1)} km`:""}${tTon.special.laps?` · ${tTon.special.laps} lap(s)`:""}.</div>`;
+  if(d.getMonth()===7) note+=`<div class="hintbox">August is Mixed K2 month. One man and one woman in a K2 score in that league.</div>`;
+  if(!duty) note+=`<div class="warnbox">No timekeeper. If nobody keeps time, the trial is unofficial and no points count. Assign one under Info → Roster.</div>`;
   $("#tnNote").innerHTML=note;
+  ensureAddForm();
+  rebuildPaddlerSelects();
+  renderReady();
+  renderInfo();
 }
 $("#tnLaps").addEventListener("click",e=>{
   const b=e.target.closest&&e.target.closest("[data-dir]"); if(!b)return;
@@ -1044,7 +1122,7 @@ async function buildSocialMsg(){
     `🌅 Sunset ~${sunsetFor(d)} — be off the water before dark`,
   ];
   if(fc)lines.push(`🌤 Forecast: ${forecastLine(fc)}`);
-  if(dl&&dl.pct_full!=null)lines.push(`🌊 ${dl.name||"Rietvlei"} ${(+dl.pct_full).toFixed(1)}% full · DWS (unaudited)`);
+  if(dl&&dl.pct_full!=null)lines.push(damLine(dl));
   if(notes)lines.push(`📝 ${notes}`);
   lines.push(`\nAlmal welkom — kom paddle saam! 🛶`);
   return lines.join("\n");
@@ -1055,6 +1133,16 @@ $("#btnSocial").addEventListener("click",async()=>{
   shareModal("Post to CCC social group",msg,"social");
 });
 $("#btnStartTrial").addEventListener("click",()=>{ensureTrialForTonight();show("capture");});
+$("#tnRemind").addEventListener("click",()=>{
+  const key=ymd(nextThursday());
+  if(!S.roster.find(r=>r.date===key)){toast("Nobody is on duty");return;}
+  remind(key);
+});
+$("#tnSwap").addEventListener("click",()=>{
+  const key=ymd(nextThursday());
+  if(!S.roster.find(r=>r.date===key)){toast("Nobody is on duty");return;}
+  requestSwap(key);
+});
 
 /* ============================================================= ROSTER */
 function renderRoster(){
@@ -1231,21 +1319,63 @@ function damAgeDays(dl){if(!dl||!dl.report_date)return null;
   return Math.floor((Date.now()-d.getTime())/86400000);}
 function fmtDamDate(s){const d=new Date(s+"T12:00:00");return isNaN(d)?s:d.toLocaleDateString("en-ZA",{day:"numeric",month:"short"});}
 // one-line summary; opts.full adds volume + week delta
+function fmtFetched(iso){const d=new Date(iso);return isNaN(d)?String(iso||""):d.toLocaleDateString("en-ZA",{day:"numeric",month:"short",year:"numeric"});}
 function damLine(dl,opts){opts=opts||{};if(!dl||dl.pct_full==null)return"";
   const age=damAgeDays(dl),stale=age!=null&&age>14;
   let s=`🌊 ${dl.name||DAM_NAME} ${(+dl.pct_full).toFixed(1)}% full`;
   if(opts.full&&dl.volume_mcm!=null&&dl.fsc_mcm!=null)s+=` · ${(+dl.volume_mcm).toFixed(2)}/${(+dl.fsc_mcm).toFixed(2)} Mm³`;
-  if(dl.report_date)s+=` · wk ${fmtDamDate(dl.report_date)}`;
-  if(opts.full&&dl.pct_last_week!=null){const dd=(+dl.pct_full)-(+dl.pct_last_week);s+=` (${dd>=0?"+":""}${dd.toFixed(1)}%)`;}
+  if(dl.report_date)s+=` · last updated ${fmtDamDate(dl.report_date)}`;
+  if(opts.full&&dl.pct_last_week!=null){const dd=(+dl.pct_full)-(+dl.pct_last_week);s+=` (${dd>=0?"+":""}${dd.toFixed(1)}% vs prior week)`;}
   if(dl.manual)s+=" · entered by hand"; else s+=" · DWS, unaudited";
-  if(stale)s+=" · data may be stale";
+  if(stale&&age!=null)s+=` · ${age} days old`;
   return s;}
 // snapshot to store on a trial (history) — a compact copy of the current reading
 function damSnapshot(dl){if(!dl||dl.pct_full==null)return null;
   return {station:dl.station||DAM_STATION,name:dl.name||DAM_NAME,pct_full:+dl.pct_full,
     volume_mcm:dl.volume_mcm!=null?+dl.volume_mcm:null,fsc_mcm:dl.fsc_mcm!=null?+dl.fsc_mcm:null,
     pct_last_week:dl.pct_last_week!=null?+dl.pct_last_week:null,report_date:dl.report_date||null,
-    manual:!!dl.manual};}
+    fetched_utc:dl.fetched_utc||null,manual:!!dl.manual};}
+function renderDamCard(){
+  const pct=$("#damPct"), meta=$("#damMeta"), stale=$("#damStale");
+  if(!pct)return;
+  const dl=_damLatest;
+  if(!dl||dl.pct_full==null){
+    pct.textContent="—";
+    if(meta)meta.textContent="No reading in dam_levels.json yet. Enter one if you have a figure. The race does not need it.";
+    if(stale){stale.className="";stale.textContent="";}
+    return;
+  }
+  const age=damAgeDays(dl);
+  pct.textContent=(+dl.pct_full).toFixed(1)+"%";
+  if(meta){
+    const fetched=dl.fetched_utc?fmtFetched(dl.fetched_utc):"";
+    let h=`Last updated <b>${dl.report_date?fmtDamDate(dl.report_date)+(age!=null?" ("+age+" days ago)":""):"—"}</b>`;
+    if(fetched)h+=`<div class="small muted">File fetched ${fetched}. DWS weekly report, unaudited.</div>`;
+    if(dl.volume_mcm!=null&&dl.fsc_mcm!=null){
+      const dd=dl.pct_last_week!=null?((+dl.pct_full)-(+dl.pct_last_week)):null;
+      h+=`<div class="small">${(+dl.volume_mcm).toFixed(2)} of ${(+dl.fsc_mcm).toFixed(2)} million m³`
+        +(dd!=null?` · ${dd>=0?"+":""}${dd.toFixed(1)}% vs the prior week`:"" )+`</div>`;
+    }
+    meta.innerHTML=h;
+  }
+  if(stale){
+    if(age!=null&&age>14){
+      stale.className="warnbox";
+      stale.innerHTML=`This is the last reading that reached the app. The Department of Water and Sanitation site refuses connections from outside South Africa, so the automatic refresh cannot run from GitHub. Enter a fresher percent if you have one. Timekeeping does not use this number.`;
+    }else{
+      stale.className="hintbox";
+      stale.textContent="Within two weeks of the DWS report date.";
+    }
+  }
+}
+function renderInfo(){
+  const d=nextThursday();
+  const spec=TTSeries.specFor(d);
+  const rules=$("#infoRules");
+  if(rules) rules.innerHTML=spec?seriesTonightHtml(spec):`<div class="hintbox">Ordinary time trial. Long and short stay separate groups. ${TTSeries.SCORING_SHORT}</div>`;
+  const dates=$("#infoDates");
+  if(dates) dates.innerHTML=seriesStandHtml();
+}
 
 /* ============================================================= CAPTURE (live lap timer) */
 let capFilter="ALL", _clock=null;
@@ -1361,15 +1491,18 @@ function lapStepperHtml(p, spec){
   const lk=p.long*longKm+p.extra*lsKm, sk=p.short*shKm;
   const step=(which,val)=>{const min=which==="extra"?0:1, max=LAP_CAP[which];
     return `<span class="stepper"><button type="button" class="sec" data-dir="-1" data-which="${which}">−</button><input data-which="${which}" type="number" inputmode="numeric" min="${min}" max="${max}" value="${val}"><button type="button" class="sec" data-dir="1" data-which="${which}">+</button></span>`;};
-  if(spec&&spec.distanceTbc) return `<div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>${spec.long.label}</b><div class="muted">${p.long} laps · <b>distance TBC</b></div></div>${step("long",p.long)}</div>
-    <div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>+ short laps</b> on ${spec.long.label}<div class="muted">optional — the poster does not set this</div></div>${step("extra",p.extra)}</div>
-    <div class="row wrap" style="justify-content:space-between"><div class="grow"><b>${spec.short.label}</b><div class="muted">${p.short} laps · <b>distance TBC</b></div></div>${step("short",p.short)}</div>`;
-  if(spec) return `<div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>${spec.long.label}</b><div class="muted">${p.long} time-trial laps · poster <b>${spec.long.km.toFixed(1)} km</b>, run included</div></div>${step("long",p.long)}</div>
-    <div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>+ short laps</b> on the long course<div class="muted">poster uses none — the run is not an extra lap</div></div>${step("extra",p.extra)}</div>
-    <div class="row wrap" style="justify-content:space-between"><div class="grow"><b>${spec.short.label}</b><div class="muted">${p.short} time-trial laps · poster <b>${spec.short.km.toFixed(1)} km</b>, run included</div></div>${step("short",p.short)}</div>`;
-  return `<div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>Long course</b><div class="muted">${p.long} × ${longKm} km${p.extra?` + ${p.extra} × ${lsKm} km`:""} = <b>${lk.toFixed(1)} km</b></div></div>${step("long",p.long)}</div>
-    <div class="row wrap" style="justify-content:space-between;margin-bottom:8px"><div class="grow"><b>+ short laps</b> on the long course<div class="muted">optional, each ${lsKm} km</div></div>${step("extra",p.extra)}</div>
-    <div class="row wrap" style="justify-content:space-between"><div class="grow"><b>Short course</b><div class="muted">${p.short} × ${shKm} km = <b>${sk.toFixed(1)} km</b></div></div>${step("short",p.short)}</div>`;
+  const row=(title,sub,which,val)=>`<div class="laprow"><div class="grow"><b>${title}</b><div class="muted">${sub}</div></div>${step(which,val)}</div>`;
+  if(spec&&spec.distanceTbc) return row(spec.long.label, p.long+" laps · distance TBC","long",p.long)+row("+ short laps","optional","extra",p.extra)+row(spec.short.label, p.short+" laps · distance TBC","short",p.short);
+  if(spec) return row(spec.long.label, spec.long.km.toFixed(1)+" km","long",p.long)+row("+ short laps","optional","extra",p.extra)+row(spec.short.label, spec.short.km.toFixed(1)+" km","short",p.short);
+  return row("Long", lk.toFixed(1)+" km","long",p.long)+row("+ short laps", lsKm+" km each","extra",p.extra)+row("Short", sk.toFixed(1)+" km","short",p.short);
+}
+function courseShort(t, course){
+  const name=courseName(t, course);
+  if(/splash/i.test(name)) return "S&D";
+  if(/triple/i.test(name)) return "SSS";
+  if(/krok/i.test(name)) return "Krok";
+  if(/likkewaan/i.test(name)) return "Likk";
+  return course==="short"?"Short":"Long";
 }
 function commitTonightLaps(which, value, isDelta){
   const d=nextThursday(); const p=coursePlan(d);
@@ -1408,31 +1541,96 @@ function loadLastWeekInto(t){const p=priorTrialWithEntries(t);if(!p)return 0;let
   save();return n;}
 $("#capNew").addEventListener("click",()=>{const t=ensureTrialForTonight();S.capSel=t.id;save();renderCapture();toast("Race ready for "+fmtDate(t.date));});
 
+function syncAddCourseTog(){
+  const sel=$("#capCourse"), tog=$("#addCourseTog"); if(!sel||!tog)return;
+  tog.innerHTML=[...sel.options].map(o=>`<button type="button" class="${o.value===sel.value?"on":""}" data-cv="${o.value}">${o.value==="short"?"Short":"Long"}</button>`).join("");
+  $$("#addCourseTog button").forEach(b=>b.onclick=()=>{sel.value=b.dataset.cv; syncAddCourseTog();});
+}
+function syncLapPanels(){
+  const t=currentTrial();
+  const other=!!(t&&t.date!==ymd(nextThursday()));
+  const cfg=$("#capLapCfg"); if(cfg) cfg.style.display=other?"":"none";
+  const laps=$("#tnLaps"); if(laps) laps.style.display=other?"none":"";
+  const sug=$("#tnUseSug");
+  if(sug){
+    const spec=TTSeries.specFor(nextThursday());
+    sug.style.display=(other||(spec&&!spec.distanceTbc))?"none":"";
+  }
+}
+function renderCheckin(){
+  const el=$("#checkList"); if(!el)return;
+  const t=currentTrial();
+  if(!t){el.innerHTML='<p class="muted small" style="margin:0">Nobody checked in yet.</p>';return;}
+  const ents=S.entries.filter(e=>e.trialId===t.id);
+  const dup=trialFirstNameDupes(t.id);
+  el.innerHTML=ents.length?ents.map(e=>`<div class="checkrow">
+      <div class="grow"><b>${capName(e,dup)}</b> <span class="tag ${e.course}">${e.boat}</span></div>
+      <div class="segtog">
+        <button type="button" class="${e.course!=="short"?"on":""}" data-setc="${e.id}" data-c="long">Long</button>
+        <button type="button" class="${e.course==="short"?"on":""}" data-setc="${e.id}" data-c="short">Short</button>
+      </div>
+    </div>`).join(""):'<p class="muted small" style="margin:0">Nobody checked in yet.</p>';
+  $$("#checkList [data-setc]").forEach(b=>b.onclick=()=>{
+    const ent=S.entries.find(x=>x.id===b.dataset.setc); if(!ent||ent.course===b.dataset.c)return;
+    ent.course=b.dataset.c; save(); renderCheckin(); renderEntrants(); renderReady();
+  });
+}
+function renderReady(){
+  const el=$("#readySum"); if(!el)return;
+  const key=ymd(nextThursday());
+  const duty=S.roster.find(r=>r.date===key);
+  const t=S.trials.find(x=>x.date===key);
+  const ents=t?S.entries.filter(e=>e.trialId===t.id):[];
+  const nL=ents.filter(e=>e.course!=="short").length;
+  el.innerHTML=`<div class="readygrid">
+      <div><div class="muted small">Timekeeper</div><b>${duty?duty.who:"Nobody"}</b></div>
+      <div style="text-align:right"><div class="muted small">Checked in</div><b>${ents.length}</b><div class="small muted">${nL} long · ${ents.length-nL} short</div></div>
+    </div>`;
+}
+function setAllCourse(course){
+  const t=currentTrial();
+  if(!t){toast("Open the race first");return;}
+  const ents=S.entries.filter(e=>e.trialId===t.id);
+  if(!ents.length){toast("No boats checked in");return;}
+  ents.forEach(e=>{e.course=course;});
+  save(); renderCheckin(); renderEntrants(); renderReady();
+  toast(course==="short"?"All boats set to short":"All boats set to long");
+}
 function renderCapture(){
   const sel=$("#capTrial");
   const trials=[...S.trials].sort((a,b)=>b.date.localeCompare(a.date));
   const has=trials.length>0;
-  ["raceCard","boatsCard","addCard"].forEach(id=>{const el=$("#"+id);if(el)el.style.display=has?"":"none";});
-  if(!has){sel.innerHTML='<option>— no race yet —</option>';$("#capTrialInfo").textContent="Tap “＋ New race”, or “Start capturing” from the Tonight tab.";$("#capSuggest").innerHTML="";return;}
+  if(!has){
+    sel.innerHTML='<option value="">— no race yet —</option>';
+    $("#capTrialInfo").textContent="Open the race from Prep.";
+    $("#capCount").textContent="";
+    $("#capList").innerHTML='<div class="empty">No boats yet.<div style="margin-top:10px"><button type="button" class="sec" data-back="tonight">Check in on Prep</button></div></div>';
+    $("#capSuggest").innerHTML="";
+    const btn=$("#btnRace"), clk=$("#raceClock");
+    btn.textContent="Start"; btn.classList.remove("danger");
+    if(clk){clk.classList.remove("race-running"); clk.textContent="0:00.0";}
+    stopClock(); ensureAddForm(); rebuildPaddlerSelects(); renderCheckin(); renderReady(); return;
+  }
   sel.innerHTML=trials.map(t=>{const pick=TTSeries.pickerLabel(t.date);return `<option value="${t.id}">${fmtDate(t.date)} · ${pick||t.season}</option>`;}).join("");
   if(!S.capSel||!trials.some(t=>t.id===S.capSel))S.capSel=trials[0].id;
   sel.value=S.capSel;
   const t=currentTrial();
-  const pick=TTSeries.pickerLabel(t.date);
-  $("#capTrialInfo").textContent=`${pick||t.season} · start ${t.start} · timekeeper ${t.timekeeper||"—"}`;
+  const lk=courseKm(t,"long"), sk=courseKm(t,"short");
   const view=TTSeries.viewFor(t);
+  const bit=(course,km)=>courseShort(t,course)+(view&&view.distanceTbc?" TBC":(km!=null?" "+Number(km).toFixed(1)+"km":""));
+  $("#capTrialInfo").textContent=`${t.start||""} · ${t.timekeeper||"no timekeeper"} · ${bit("long",lk)} · ${bit("short",sk)}`;
   const courseNow=$("#capCourse").value||"long";
   $("#capCourse").innerHTML=`<option value="long">${view?view.longLabel:"Long"}</option><option value="short">${view?view.shortLabel:"Short"}</option>`;
   $("#capCourse").value=courseNow==="short"?"short":"long";
+  syncAddCourseTog();
   $("#capBoat").innerHTML=BOATS.map(b=>`<option>${b}</option>`).join("");
   $("#lapsLong").value=t.lapsLong||2; $("#lapsShort").value=t.lapsShort||3; $("#longShortLaps").value=t.longShortLaps||0;
   // sunset suggestion for the long course
   const sp=t.special||null;
   $("#capSpecial").checked=!!sp;
-  $("#capSpecialFields").style.display=sp?"":"none";
+  $("#capSpecialFields").style.display=sp?"block":"none";
   if(sp){$("#capSpecName").value=sp.name||"";$("#capSpecKm").value=sp.km||"";$("#capSpecLaps").value=sp.laps||"";}
   const sg=suggestCourse(new Date(t.date+"T12:00:00"));
-  const lk=courseKm(t,"long"), sk=courseKm(t,"short");
   const seriesNight=TTSeries.isSeriesTrial(t);
   $("#lapSuggest").innerHTML=sp
     ? `<span class="muted">⭐ Special: <b>${sp.name||"unnamed"}</b> — ${(+sp.km||0).toFixed(1)} km over ${sp.laps||"?"} lap(s). Normal long-course laps are ignored tonight.</span>`
@@ -1445,32 +1643,29 @@ function renderCapture(){
       +((!seriesNight&&(sg.long!==(t.lapsLong||2)||sg.longShort!==(t.longShortLaps||0)))?` <button class="sm sec" id="lapApply" style="padding:4px 8px">Use suggestion</button>`:"");
   if($("#lapApply"))$("#lapApply").onclick=()=>{t.lapsLong=sg.long;t.longShortLaps=sg.longShort;save();renderCapture();toast("Long course set to "+courseLabel(sg.long,sg.longShort));};
   $("#capWeather").textContent=t.weather?("🌤 Conditions at the gun: "+weatherLine(t.weather)):"";
-  {const dl=t.damLevel||_damLatest;const el=$("#capDam");
-   if(el)el.textContent=dl?damLine(dl,{full:true})+(t.damLevel?" — recorded for this trial":" — will be recorded when you start"):"🌊 Dam level: none yet";}
+  {const el=$("#capDam");
+   if(el)el.textContent=t.damLevel?"Saved on this trial.":(_damLatest?"This reading is saved when the race starts.":"No reading yet.");}
   // suggestion banner
   const mine=S.entries.filter(e=>e.trialId===t.id);
   const prior=priorTrialWithEntries(t);
   $("#capSuggest").innerHTML = (mine.length===0&&prior)
-    ? `<div class="card"><div class="row" style="justify-content:space-between"><span class="small">Last race (${fmtDate(prior.date)}) had <b>${S.entries.filter(e=>e.trialId===prior.id).length}</b> boats.</span><button class="sm wa" id="capLoadLast">Use that list</button></div></div>` : "";
+    ? `<div class="row" style="justify-content:space-between;gap:8px;align-items:center;margin-bottom:8px"><span class="small">Last race (${fmtDate(prior.date)}) had <b>${S.entries.filter(e=>e.trialId===prior.id).length}</b> boats.</span><button class="sm wa" id="capLoadLast" type="button">Use that list</button></div>` : "";
   if($("#capLoadLast"))$("#capLoadLast").onclick=()=>{const n=loadLastWeekInto(t);renderCapture();toast(n+" boats loaded from last week");};
   rebuildPaddlerSelects();renderQuickAdd();
-  // race button
   const btn=$("#btnRace");const clk=$("#raceClock");
   const ents=S.entries.filter(e=>e.trialId===t.id);
   const hasActive=ents.some(e=>!entryDone(e,t));
   if(t.startedAt && (hasActive || !ents.length)){
-    btn.textContent="● Running — reset";btn.classList.add("danger");clk.classList.add("race-running");clk.textContent=fmtClock(raceElapsed(t));startClock();
-  }else if(t.startedAt && !hasActive){ // every boat finished — freeze the clock
-    stopClock();btn.textContent="✓ All boats in";btn.classList.remove("danger");clk.classList.remove("race-running");
+    btn.textContent="Reset";btn.classList.add("danger");clk.classList.add("race-running");clk.textContent=fmtClock(raceElapsed(t));startClock();
+  }else if(t.startedAt && !hasActive){
+    stopClock();btn.textContent="All in";btn.classList.remove("danger");clk.classList.remove("race-running");
     clk.textContent=fmtClock(Math.max.apply(null,ents.map(e=>entryTotal(e)||0)));
   }else{
-    btn.textContent="▶ Start race";btn.classList.remove("danger");clk.classList.remove("race-running");clk.textContent="0:00.0";stopClock();
+    btn.textContent="Start";btn.classList.remove("danger");clk.classList.remove("race-running");clk.textContent="0:00.0";stopClock();
   }
-  // Once the race is under way, collapse the course-setup controls so the boat list sits
-  // near the top and the timekeeper isn't scrolling past settings to reach every boat.
-  const capturing=!!t.startedAt;
-  ["capLapCfg","capSpecCfg","lapSuggest","capWeather","capHelp","capSuggest","capH1","capTrialCard"].forEach(id=>{
-    const el=$("#"+id);if(el)el.style.display=capturing?"none":"";});
+  syncLapPanels();
+  renderCheckin();
+  renderReady();
   renderEntrants();
 }
 /* how often each paddler has raced — used to list regulars first */
@@ -1545,18 +1740,29 @@ function paddlerOptionHtml(m,selId,trialId,exceptEntryId){
 function pickablePaddlers(trialId,selId){
   return activeMembers().filter(m=>!m.guest||m.id===selId||S.entries.some(e=>e.trialId===trialId&&(e.memberIds||[]).includes(m.id)));}
 
+function ensureAddForm(){
+  const boat=$("#capBoat");
+  if(boat&&!boat.options.length) boat.innerHTML=BOATS.map(b=>`<option>${b}</option>`).join("");
+  const sel=$("#capCourse");
+  if(sel&&!sel.options.length){
+    const view=TTSeries.viewFor({date:ymd(nextThursday())});
+    sel.innerHTML=`<option value="long">${view?view.longLabel:"Long"}</option><option value="short">${view?view.shortLabel:"Short"}</option>`;
+    syncAddCourseTog();
+  }
+}
 function rebuildPaddlerSelects(){
-  const t=currentTrial();if(!t)return;
-  const n=boatSize($("#capBoat").value);
+  const t=currentTrial();
+  const trialId=t?t.id:"_none";
+  const n=boatSize(($("#capBoat")&&$("#capBoat").value)||"K1");
   const keep=$$(".capP").map(s=>s.value); // preserve selections across rebuilds
   const keepG=$$(".capGuest").map(x=>x.value); // preserve half-typed guest names too
   const q=(($("#capPadSearch")&&$("#capPadSearch").value)||"").trim().toLowerCase();
   const rec=recentRank(8);
   const match=m=>!q||(memberFull(m)+" "+(m.alias||"")).toLowerCase().includes(q);
   const opts=sel=>'<option value="">— paddler —</option>'
-    +pickablePaddlers(t.id,sel).filter(m=>match(m)||m.id===sel)
+    +pickablePaddlers(trialId,sel).filter(m=>match(m)||m.id===sel)
       .sort((a,b)=>(rec[b.id]||0)-(rec[a.id]||0)||memberFull(a).localeCompare(memberFull(b)))
-      .map(m=>paddlerOptionHtml(m,sel,t.id,null)).join("")+GUEST_OPT;
+      .map(m=>paddlerOptionHtml(m,sel,trialId,null)).join("")+GUEST_OPT;
   $("#capPaddlers").innerHTML=Array.from({length:n},(_,i)=>
     `<label>${n>1?"Paddler "+(i+1):"Paddler"}</label>`
     +`<select class="capP" data-i="${i}">${opts(keep[i]||"")}</select>`
@@ -1573,32 +1779,34 @@ function renderEntrants(){
   if(capFilter!=="ALL")list=list.filter(e=>e.course===capFilter);
   const active=list.filter(e=>!entryDone(e,t)).sort((a,b)=>(a.lastTap||0)-(b.lastTap||0));
   const done=list.filter(e=>entryDone(e,t)).sort(cmpEntry);
-  $("#capCount").textContent=`· ${active.length} on water · ${done.length} finished`;
+  $("#capCount").textContent=active.length?(active.length+" still out"):(done.length?"All boats in":"");
   const dup=trialFirstNameDupes(t.id);
   const rowActive=e=>{const tgt=lapTarget(t,e.course);const n=e.splits.length;
     const last=n?fmtClock(e.splits[n-1]-(n>1?e.splits[n-2]:0)):null;
+    const action=n+1>=tgt?"Finish":"Lap";
     return `<div class="boatrow active" data-lap="${e.id}">
-      <div class="bl"><b>${capName(e,dup)}</b> <span class="tag ${e.course}">${e.boat}</span>
-        <div class="small muted">Lap ${n}/${tgt}${n?` · last ${last} · ${fmtClock(entryTotal(e))}`:` · ${courseName(t,e.course)}`}</div></div>
-      ${n?`<button class="undo" data-undo="${e.id}">↩</button>`:""}
-      <button class="undo" data-editb="${e.id}">⚙</button>
-      <button class="lapbtn">Lap</button></div>`;};
+      <div class="bl"><b>${capName(e,dup)}</b>
+        <div class="small muted"><span class="tag ${e.course}">${courseShort(t,e.course)}</span> ${e.boat} · lap ${n}/${tgt}${n?` · ${fmtClock(entryTotal(e))}${last?` · last ${last}`:""}`:""}</div></div>
+      ${n?`<button class="undo" type="button" data-undo="${e.id}" aria-label="Undo lap">↩</button>`:""}
+      <button class="undo" type="button" data-editb="${e.id}" aria-label="Edit boat">⚙</button>
+      <span class="lapbtn">${action}</span></div>`;};
   const orderOnly=!!t.orderOnly;
   const rowDone=e=>{const sp=orderOnly?null:entrySpeed(e),imp=!orderOnly&&entryImproved(e);
     return `<div class="boatrow done">
-      <div class="bl"><b>${capName(e,dup)}</b> <span class="tag ${e.course}">${e.boat}</span>${imp?' <span class="pill triples">⬆ PB</span>':""}
-        <div class="small muted">${orderOnly?"finish order":e.splits.length+" laps"+(sp&&sp<40?" · "+fmtSpeed(sp):"")}</div></div>
+      <div class="bl"><b>${capName(e,dup)}</b>
+        <div class="small muted"><span class="tag ${e.course}">${courseShort(t,e.course)}</span> ${e.boat}${imp?" · PB":""} · ${orderOnly?"order":e.splits.length+" laps"+(sp&&sp<40?" · "+fmtSpeed(sp):"")}</div></div>
       <span class="num">${orderOnly?"":fmtClock(entryTotal(e))}</span>
-      <button class="undo" data-editb="${e.id}">⚙</button></div>`;};
-  const finishedHdr=done.length?`<div class="small muted" style="margin:6px 0">Finished</div>`:"";
-  $("#capList").innerHTML=(active.map(rowActive).join("")||(done.length?"":'<div class="empty">No boats yet — add them below, or load last week’s list.</div>'))+finishedHdr+done.map(rowDone).join("");
+      ${e.splits&&e.splits.length?`<button class="undo" type="button" data-undo="${e.id}" aria-label="Undo finish">↩</button>`:""}
+      <button class="undo" type="button" data-editb="${e.id}" aria-label="Edit boat">⚙</button></div>`;};
+  const finishedHdr=done.length?`<div class="stillout">${done.length} finished</div>`:"";
+  $("#capList").innerHTML=(active.map(rowActive).join("")||(done.length?"":'<div class="empty">No boats yet.<div style="margin-top:10px"><button type="button" class="sec" data-back="tonight">Check in on Prep</button></div></div>'))+finishedHdr+done.map(rowDone).join("");
   $$('#capList .boatrow.active').forEach(r=>r.onclick=()=>recordLap(r.dataset.lap));
   $$('#capList [data-undo]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();undoLap(b.dataset.undo);});
   $$('#capList [data-editb]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();editBoat(b.dataset.editb);});
 }
 function recordLap(eid){
   const t=currentTrial();if(!t)return;
-  if(!t.startedAt){toast("Tap ▶ Start race first");return;}
+  if(!t.startedAt){toast("Tap Start first");return;}
   const e=S.entries.find(x=>x.id===eid);if(!e)return;
   if(entryDone(e,t))return;
   e.splits.push(+raceElapsed(t).toFixed(1));e.lastTap=Date.now();save();renderEntrants();
@@ -1720,8 +1928,10 @@ $("#capSpecial").addEventListener("change",e=>{const t=currentTrial();if(!t)retu
   save();renderCapture();}));
 $("#capBoat").addEventListener("change",rebuildPaddlerSelects);
 $("#capPadSearch").addEventListener("input",rebuildPaddlerSelects);
+$("#setAllLong").addEventListener("click",()=>setAllCourse("long"));
+$("#setAllShort").addEventListener("click",()=>setAllCourse("short"));
 $("#capAdd").addEventListener("click",()=>{
-  const t=currentTrial();if(!t){toast("Start a race first");return;}
+  let t=currentTrial();if(!t)t=ensureTrialForTonight();
   const boat=$("#capBoat").value,course=$("#capCourse").value;
   const raw=$$("#capPaddlers .capP").map(s=>{
     if(s.value==="__guest__"){const gi=$(`#capPaddlers .capGuest[data-i="${s.dataset.i}"]`);
@@ -1736,7 +1946,7 @@ $("#capAdd").addEventListener("click",()=>{
   S.entries.push(ent);
   const moved=dedupeTrialMembers(t.id,ent.id); // a paddler joins one boat = leaves any other
   $("#capPadSearch").value="";
-  save();rebuildPaddlerSelects();renderEntrants();
+  save();rebuildPaddlerSelects();renderCapture();
   toast("Added "+entryName(ent)+(moved?" · moved from another boat":""));
 });
 /* --- results message for WhatsApp --- */
@@ -1779,7 +1989,7 @@ $("#capDamEdit").addEventListener("click",()=>{
     if(isNaN(pct)){toast("Enter the % full");return false;}
     t.damLevel={station:DAM_STATION,name:DAM_NAME,pct_full:pct,report_date:$("#dmDate").value||today,
       volume_mcm:null,fsc_mcm:null,pct_last_week:null,manual:true};
-    save();renderCapture();toast("Dam level recorded");
+    save();renderCapture();renderDamCard();toast("Dam level recorded");
   },"Save");
   const c=$("#dmClear");if(c)c.onclick=()=>{delete t.damLevel;save();renderCapture();closeModal();toast("Dam level cleared");};
 });
@@ -2321,15 +2531,33 @@ function shareModal(title,text,which){
 function show(v){
   if(v!=="capture")stopClock();
   $$(".view").forEach(s=>s.classList.toggle("on",s.id==="view-"+v));
-  $$("nav button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+  const navOn=(v==="info"||v==="standings"||v==="roster"||v==="members")?"info":v;
+  $$("nav button").forEach(b=>b.classList.toggle("on",b.dataset.v===navOn));
   if(v==="tonight")renderTonight();
   if(v==="roster")renderRoster();
   if(v==="capture")renderCapture();
   if(v==="standings")renderStandings();
   if(v==="members")renderMembers();
+  if(v==="info"){renderInfo();renderDamCard();}
   window.scrollTo(0,0);
 }
 $$("nav button").forEach(b=>b.onclick=()=>show(b.dataset.v));
+const infoJumps=$("#infoJumps");
+if(infoJumps) infoJumps.addEventListener("click",e=>{const b=e.target.closest("[data-go]");if(!b)return;show(b.dataset.go);});
+document.addEventListener("click",e=>{const b=e.target.closest("[data-back]");if(!b)return;show(b.dataset.back);});
+document.addEventListener("focusin",e=>{
+  const t=e.target;
+  if(t&&t.matches&&t.matches("input, textarea, select")&&!t.classList.contains("sr")){
+    document.body.classList.add("kb");
+    setTimeout(()=>{try{t.scrollIntoView({block:"center"});}catch(err){}},80);
+  }
+});
+document.addEventListener("focusout",()=>{
+  setTimeout(()=>{
+    const a=document.activeElement;
+    if(!a||!a.matches||!a.matches("input, textarea, select")) document.body.classList.remove("kb");
+  },150);
+});
 
 function renderAll(){renderTonight();renderRoster();renderCapture();renderStandings();renderMembers();renderSyncInfo();applyAdminUI();}
 $("#verTag").textContent="v"+APP_VERSION;
@@ -2337,7 +2565,7 @@ $("#verTag").textContent="v"+APP_VERSION;
 standSeason=seasonFor(new Date());
 renderAll();
 applyAdminUI();maybeLock();
-fetchDam().then(()=>{if($("#view-tonight")&&$("#view-tonight").classList.contains("on"))renderTonight();}).catch(()=>{}); // load dam level (same-origin, never scrapes DWS)
+fetchDam().then(()=>{renderDamCard();}).catch(()=>{}); // same-origin file only — the app never scrapes DWS
 // The optional-short-lap correction lives in normalize(). Persist it before the startup
 // sync so a saved 2.1 is already 1.4 locally and the merge pushes it like a settings edit.
 try{
