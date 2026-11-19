@@ -118,7 +118,7 @@ function renderLatest(){
   if(t.damLevel&&t.damLevel.pct_full!=null){const dl=t.damLevel;
     h+=`<div class="meta">🌊 ${esc(dl.name||"Rietvlei")} ${(+dl.pct_full).toFixed(1)}% full`
       +(dl.volume_mcm!=null&&dl.fsc_mcm!=null?` · ${(+dl.volume_mcm).toFixed(2)}/${(+dl.fsc_mcm).toFixed(2)} Mm³`:"")
-      +(dl.report_date?` · wk ${esc(dl.report_date)}`:"")+(dl.manual?"":" · DWS, unaudited")+`</div>`;}
+      +(dl.report_date?` · last updated ${esc(fmtDate(dl.report_date))}`:"")+(dl.manual?" · entered by hand":" · DWS, unaudited")+`</div>`;}
   const orderOnly=!!t.orderOnly;
   ["long","short"].forEach(course=>{
     const grp=S.entries.filter(e=>e.trialId===t.id&&e.course===course&&entryDone(e,t))

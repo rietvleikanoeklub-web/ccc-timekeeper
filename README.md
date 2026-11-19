@@ -3,7 +3,7 @@
 Single-file PWA for Centurion Canoe Club Thursday time trials. Mirrors the CCC Bar Tab
 pattern (one `index.html`, deploy to GitHub Pages, cloud sync via Google Apps Script + Drive JSON).
 
-**Status:** v0.46.2. **LIVE:** https://rietvleikanoeklub-web.github.io/ccc-timekeeper/
+**Status:** v0.47.0. **LIVE:** https://rietvleikanoeklub-web.github.io/ccc-timekeeper/
 Installable PWA (offline app shell). Works offline (localStorage) and syncs to Google Drive once the
 Apps Script backend below is connected.
 
@@ -54,11 +54,16 @@ Reminder emails and calendar descriptions pick up the series wording only after
 `CCC_TT_AppsScript.gs` is pasted into the club Apps Script project and redeployed.
 The timekeeping app itself does not need that redeploy.
 
+## Race-day screens
+- **Prep** — who is keeping time, check boats in, long/short on each boat, laps. Readiness sits at the top.
+- **Race** — clock, start, a course filter, then the boats. Tap a boat for the next lap (the last lap is labelled Finish). Undo is on the row. Rules, weather and the dam are not on this screen.
+- **Info** — dam level with the report date, conditions, routes, series dates, and links to results, the roster and club sync.
+
 ## What works
-- **Tonight** — auto-computes the next Thursday's season, start time (17:00 winter / 17:15 summer),
+- **Prep** — auto-computes the next Thursday's season, start time (17:00 winter / 17:15 summer),
   and distance/laps; shows assigned timekeeper + sunset; builds a WhatsApp announcement.
 - **Roster** — 2026 schedule preloaded; per-person reminder + "request swap" via WhatsApp; reassign.
-- **Capture** — live **lap timer**: one screen, race clock, colour-coded LONG/SHORT tags. Tap a boat
+- **Race** — live **lap timer**: race clock, colour-coded LONG/SHORT tags. Tap a boat
   each time it crosses to record a lap split; finished boats sink to a Finished section. "Use last
   week's list" suggestion to start a race fast. Per-night editable lap counts (Long/Short).
   **Crew boats**: K2/S2 = 2 paddlers, K3/S3 = 3 (the Add-boat form shows N paddler pickers by boat
@@ -106,7 +111,10 @@ timestamps / tombstones.
 
 Each trial records the Rietvlei dam level for history, next to the weather. The app reads
 `dam_levels.json` (same origin — it never scrapes DWS itself) and snapshots the reading onto a
-trial when the race starts; a timekeeper can also enter/adjust it by hand on the Capture tab.
+trial when the race starts. The Info screen shows the percent, the DWS report date ("last updated")
+and how many days old it is. A timekeeper can enter a fresher figure there. The race screen does not
+show it. The file in the repo is still the 26 Oct 2026 report (fetched 2 Nov 2026): DWS returns
+HTTP 403 outside South Africa, and nothing newer has been pushed from a SA connection.
 
 `dam_levels.py` is the DWS weekly-report scraper (unaudited, updates Mondays, station A2R004 =
 Rietvlei). `update_dam_levels.sh` wraps it: fetch, and push `dam_levels.json` **only when the reading

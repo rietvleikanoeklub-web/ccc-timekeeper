@@ -236,8 +236,8 @@ const gsDates = [...gs.matchAll(/'(202[67]-\d{2}-\d{2})'\s*:\s*'(standard|dry-ru
 assert.deepStrictEqual(gsDates, expected);
 
 // App shell version, cache, preserved scoring, preserved lap fix, sanitised-sync guard.
-assert.match(html, /const APP_VERSION = "0\.46\.2"/);
-assert.match(sw, /const CACHE = "ccc-tk-v0\.46\.2"/);
+assert.match(html, /const APP_VERSION = "0\.47\.0"/);
+assert.match(sw, /const CACHE = "ccc-tk-v0\.47\.0"/);
 assert.match(sw, /tt-series\.js/);
 assert.match(sw, /tt-score\.js/);
 assert.match(html, /src="tt-series\.js"/);
